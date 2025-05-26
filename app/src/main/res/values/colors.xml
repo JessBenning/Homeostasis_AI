@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Primary brand colors -->
+    <color name="primary">#4285F4</color>
+    <color name="primary_variant">#3367D6</color>
+    <color name="on_primary">#FFFFFF</color>
+    
+    <!-- Secondary brand colors -->
+    <color name="secondary">#34A853</color>
+    <color name="secondary_variant">#2E7D32</color>
+    <color name="on_secondary">#FFFFFF</color>
+    
+    <!-- Accent color -->
+    <color name="accent">#FBBC05</color>
+    <color name="on_accent">#000000</color>
+    
+    <!-- Error color -->
+    <color name="error">#EA4335</color>
+    <color name="on_error">#FFFFFF</color>
+    
+    <!-- Background colors -->
+    <color name="background">#FFFFFF</color>
+    <color name="on_background">#202124</color>
+    
+    <!-- Surface colors -->
+    <color name="surface">#F8F9FA</color>
+    <color name="on_surface">#202124</color>
+    
+    <!-- Text colors -->
+    <color name="text_primary">#202124</color>
+    <color name="text_secondary">#5F6368</color>
+    <color name="text_disabled">#9AA0A6</color>
+    
+    <!-- Category colors -->
+    <color name="category_blue">#4285F4</color>
+    <color name="category_green">#34A853</color>
+    <color name="category_purple">#A142F4</color>
+    <color name="category_red">#EA4335</color>
+    <color name="category_yellow">#FBBC05</color>
+    <color name="category_cyan">#42C6F4</color>
+    <color name="category_orange">#F47742</color>
+    <color name="category_pink">#F442A1</color>
+    
+    <!-- Status colors -->
+    <color name="completed">#34A853</color>
+    <color name="pending">#FBBC05</color>
+    
+    <!-- Legacy colors for backward compatibility -->
+    <color name="purple_200">#BB86FC</color>
+    <color name="purple_500">#6200EE</color>
+    <color name="purple_700">#3700B3</color>
+    <color name="teal_200">#03DAC5</color>
+    <color name="teal_700">#018786</color>
+    <color name="black">#000000</color>
+    <color name="white">#FFFFFF</color>
+</resources>

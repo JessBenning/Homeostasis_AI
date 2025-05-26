@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Primary brand colors for dark theme -->
+    <color name="primary_dark">#82B1FF</color>
+    <color name="primary_variant_dark">#5472D3</color>
+    <color name="on_primary_dark">#000000</color>
+
+    <!-- Secondary brand colors for dark theme -->
+    <color name="secondary_dark">#80CBC4</color>
+    <color name="secondary_variant_dark">#4DB6AC</color>
+    <color name="on_secondary_dark">#000000</color>
+
+    <!-- Background colors for dark theme -->
+    <color name="background_dark">#3F3D3D</color>
+    <color name="on_background_dark">#FFFFFF</color>
+<!--    -->
+<!--    &lt;!&ndash; Surface colors for dark theme &ndash;&gt;-->
+<!--    <color name="surface_dark">#1E1E1E</color>-->
+<!--    <color name="on_surface_dark">#FFFFFF</color>-->
+<!--    -->
+    <!-- Text colors for dark theme -->
+    <color name="text_primary_dark">#FFFFFF</color>
+    <color name="text_secondary_dark">#B3FFFFFF</color> <!-- 70% white -->
+    <color name="text_disabled_dark">#80FFFFFF</color> <!-- 50% white -->
+<!--    -->
+<!--    &lt;!&ndash; Category colors for dark theme (slightly lighter versions) &ndash;&gt;-->
+<!--    <color name="category_blue_dark">#82B1FF</color>-->
+<!--    <color name="category_green_dark">#80CBC4</color>-->
+<!--    <color name="category_purple_dark">#B39DDB</color>-->
+<!--    <color name="category_red_dark">#FF8A80</color>-->
+<!--    <color name="category_yellow_dark">#FFD180</color>-->
+<!--    <color name="category_cyan_dark">#84FFFF</color>-->
+<!--    <color name="category_orange_dark">#FFB74D</color>-->
+<!--    <color name="category_pink_dark">#F48FB1</color>-->
+<!--    -->
+<!--    &lt;!&ndash; Status colors for dark theme &ndash;&gt;-->
+<!--    <color name="completed_dark">#80CBC4</color>-->
+<!--    <color name="pending_dark">#FFD180</color>-->
+</resources>

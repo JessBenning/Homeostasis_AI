@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "524854484631",
+    "firebase_url": "https://homeostasis-2f940-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "homeostasis-2f940",
+    "storage_bucket": "homeostasis-2f940.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:524854484631:android:6a6fe6ae061aece94453d2",
+        "android_client_info": {
+          "package_name": "com.homeostasis.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAtsh1XlLBy9lk8LgIi7JtcwvBZTEO46G0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

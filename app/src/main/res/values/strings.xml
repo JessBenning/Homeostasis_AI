@@ -1,0 +1,95 @@
+<resources>
+    <string name="app_name">Homeostasis</string>
+    
+    <!-- Common -->
+    <string name="save">Save</string>
+    <string name="cancel">Cancel</string>
+    <string name="delete">Delete</string>
+    <string name="edit">Edit</string>
+    <string name="ok">OK</string>
+    <string name="undo">Undo</string>
+    
+    <!-- Navigation -->
+    <string name="nav_tasks">Tasks</string>
+    <string name="nav_shopping">Shop</string>
+    <string name="nav_leaderboard">Score</string>
+    <string name="nav_profile">Me</string>
+    <string name="nav_settings">Settings</string>
+    
+    <!-- Tasks -->
+    <string name="tasks_title">Tasks</string>
+    <string name="task_new">New Task</string>
+    <string name="task_edit">Edit Task</string>
+    <string name="task_title_hint">Task Title</string>
+    <string name="task_description_hint">Description</string>
+    <string name="task_points_hint">Points</string>
+    <string name="task_category_hint">Category</string>
+    <string name="task_completed">Task Completed!</string>
+    <string name="task_points_added">%1$d points added to your score!</string>
+    <string name="task_last_done">Last done: %1$s by %2$s</string>
+    <string name="task_never_done">Last done: Never</string>
+    <string name="tasks_empty_message">No %1$s available. Tap the + button to create one.</string>
+    <string name="action_edit_task">Edit Task</string>
+    <string name="action_delete_task">Delete Task</string>
+    <string name="task_complete_checkmark">\u2713</string>
+    
+    <!-- Categories -->
+    <string name="categories_title">Categories</string>
+    <string name="category_new">New Category</string>
+    <string name="category_edit">Edit Category</string>
+    <string name="category_name_hint">Category Name</string>
+    <string name="category_color_hint">Color</string>
+    <string name="category_icon_hint">Icon</string>
+    <string name="category_all">All</string>
+    
+    <!-- Shopping -->
+    <string name="shopping_lists_title">Shopping Lists</string>
+    <string name="shopping_list_new">New Shopping List</string>
+    <string name="shopping_list_edit">Edit Shopping List</string>
+    <string name="shopping_list_name_hint">List Name</string>
+    <string name="shopping_item_new">New Item</string>
+    <string name="shopping_item_name_hint">Item Name</string>
+    <string name="shopping_item_quantity_hint">Quantity</string>
+    <string name="shopping_item_notes_hint">Notes</string>
+    <string name="shopping_recent_items">Recent Items</string>
+    <string name="shopping_items_count">%1$d items (%2$d checked)</string>
+    
+    <!-- Leaderboard -->
+    <string name="leaderboard_title">Leaderboard</string>
+    <string name="leaderboard_reset">Reset</string>
+    <string name="leaderboard_points">%1$d pts</string>
+    <string name="leaderboard_points_behind">(%1$d pts behind leader)</string>
+    <string name="leaderboard_task_history">Task Completion History</string>
+    
+    <!-- Profile -->
+    <string name="profile_title">My Profile</string>
+    <string name="profile_name_hint">Name</string>
+    <string name="profile_edit_picture">Edit Picture</string>
+    <string name="profile_current_score">Current Score: %1$d points</string>
+    <string name="profile_rank">Rank: %1$s</string>
+    <string name="profile_task_history">Task History</string>
+    
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_cloud_sync">Cloud Sync</string>
+    <string name="settings_cloud_sync_enabled">Enable Cloud Sync</string>
+    <string name="settings_cloud_sync_frequency">Sync Frequency</string>
+    <string name="settings_threshold">Score Threshold</string>
+    <string name="settings_threshold_value">Threshold Value</string>
+    <string name="settings_reset_behavior">Reset Behavior</string>
+    <string name="settings_reset_zero">Zero (All scores return to zero)</string>
+    <string name="settings_reset_relative">Relative (Subtract threshold)</string>
+    <string name="settings_reset_percentage">Percentage (Keep 10% of excess)</string>
+    <string name="settings_preserve_differences">Preserve score differences</string>
+    
+    <!-- Auth -->
+    <string name="auth_login">Login</string>
+    <string name="auth_register">Register</string>
+    <string name="auth_email_hint">Email</string>
+    <string name="auth_password_hint">Password</string>
+    <string name="auth_confirm_password_hint">Confirm Password</string>
+    <string name="auth_forgot_password">Forgot Password?</string>
+    <string name="auth_create_account">Create Account</string>
+    <string name="auth_already_have_account">Already have an account? Login</string>
+    <string name="auth_dont_have_account">Don\'t have an account? Register</string>
+</resources>
