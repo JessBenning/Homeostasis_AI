@@ -25,7 +25,7 @@ import java.util.Date
  * Fragment for displaying the list of tasks.
  */
 @AndroidEntryPoint
-class TaskListFragment : Fragment(), AddTaskDialogFragment.AddTaskListener, TaskAdapter.OnTaskClickListener {
+class TaskListFragment : Fragment(), AddModTaskDialogFragment.AddModTaskListener, TaskAdapter.OnTaskClickListener {
 
     private lateinit var recyclerView: RecyclerView
     private lateinit var emptyView: TextView
@@ -115,20 +115,42 @@ class TaskListFragment : Fragment(), AddTaskDialogFragment.AddTaskListener, Task
     }
     
     private fun showAddTaskDialog() {
-        val dialogFragment = AddTaskDialogFragment.newInstance()
-        dialogFragment.setAddTaskListener(this)
-        dialogFragment.show(parentFragmentManager, AddTaskDialogFragment.TAG)
+        val dialogFragment = AddModTaskDialogFragment.newInstance()
+        dialogFragment.setAddModTaskListener(this)
+        dialogFragment.show(parentFragmentManager, AddModTaskDialogFragment.TAG)
     }
 
     override fun onTaskAdded(task: Task) {
+        // Generate a unique ID for the task if it doesn't have one
+        val taskWithId = if (task.id.isEmpty()) {
+            task.copy(id = java.util.UUID.randomUUID().toString())
+        } else {
+            task
+        }
+        
         // Add the task to our list
-        tasks.add(task)
+        tasks.add(taskWithId)
         
         // Update the UI
         updateUI()
         
         // Show a success message
-        showSnackbar("Task '${task.title}' added successfully!")
+        showSnackbar("Task '${taskWithId.title}' added successfully!")
+    }
+    
+    override fun onTaskModified(task: Task) {
+        // Find the task in the list
+        val position = tasks.indexOfFirst { it.id == task.id }
+        if (position != -1) {
+            // Update the task in the list
+            tasks[position] = task
+            
+            // Update the UI
+            taskAdapter.notifyItemChanged(position)
+            
+            // Show a success message
+            showSnackbar("Task '${task.title}' updated successfully!")
+        }
     }
     
     override fun onTaskClick(task: Task) {
@@ -168,15 +190,11 @@ class TaskListFragment : Fragment(), AddTaskDialogFragment.AddTaskListener, Task
         if (position < 0 || position >= tasks.size) return
         
         val task = tasks[position]
-
-        //TODO
-        // In a real app, you would show a dialog to edit the task
-        // For now, just show a toast
-        Toast.makeText(
-            requireContext(),
-            "Edit task: ${task.title}",
-            Toast.LENGTH_SHORT
-        ).show()
+        
+        // Show the dialog to edit the task
+        val dialogFragment = AddModTaskDialogFragment.newInstance(task)
+        dialogFragment.setAddModTaskListener(this)
+        dialogFragment.show(parentFragmentManager, AddModTaskDialogFragment.TAG)
     }
     
     private fun confirmDeleteTask(position: Int) {
@@ -261,7 +279,12 @@ class TaskListFragment : Fragment(), AddTaskDialogFragment.AddTaskListener, Task
         val task = tasks[position]
         
         // Only proceed if the task has been completed at least once
-        if (!task.isCompleted()) return
+        if (!task.isCompleted()) {
+
+            // Update the UI
+            taskAdapter.notifyItemChanged(position)
+            return
+        }
         
         val updatedTask = task.undoLastCompletion() ?: return
         
@@ -294,6 +317,14 @@ class TaskListFragment : Fragment(), AddTaskDialogFragment.AddTaskListener, Task
                 }
             }
             .show()
+    }
+
+    private fun showUnabaleToUndoSnackbar(task: Task) {
+        Snackbar.make(
+            requireView(),
+            "Task '${task.title}' completion undone: -${task.points} points",
+            Snackbar.LENGTH_LONG
+        ).show()
     }
     
     private fun showUndoCompletionSnackbar(task: Task) {
