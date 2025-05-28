@@ -55,6 +55,10 @@ class MainActivity : AppCompatActivity() {
 
         bottomNav.setOnItemSelectedListener { item ->
             when (item.itemId) {
+                R.id.navigation_tasks -> {
+                    navController.navigate(R.id.navigation_tasks)
+                    true
+                }
                 R.id.navigation_settings -> {
                     navController.navigate(R.id.navigation_settings)
                     true
