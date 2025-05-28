@@ -7,6 +7,7 @@ import com.google.firebase.FirebaseApp
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreSettings
 import com.homeostasis.app.data.AppDatabase
+import com.homeostasis.app.data.FirebaseSyncManager
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 
@@ -20,6 +21,9 @@ class HomeostasisApplication : Application() {
     @Inject
     lateinit var appDatabase: AppDatabase
 
+    @Inject
+    lateinit var firestore: FirebaseFirestore
+
     override fun onCreate() {
         super.onCreate()
 
@@ -30,7 +34,6 @@ class HomeostasisApplication : Application() {
             Log.d(TAG, "Firebase initialized successfully")
 
             // Configure Firestore settings for offline persistence
-            val firestore = FirebaseFirestore.getInstance()
             val settings = FirebaseFirestoreSettings.Builder()
                 .setPersistenceEnabled(true)
                 .build()
@@ -55,6 +58,13 @@ class HomeostasisApplication : Application() {
             // TODO: Initialize Room database
             // TODO: Initialize WorkManager for background tasks
             Log.d(TAG, "AppDatabase initialized successfully")
+
+            val syncManager = FirebaseSyncManager(appDatabase, firestore)
+            syncManager.syncTasks()
+            syncManager.syncHouseholdGroups()
+            syncManager.syncInvitations()
+            syncManager.syncUsers()
+
         } catch (e: Exception) {
             Log.e(TAG, "Error initializing Firebase: ${e.message}", e)
         }
