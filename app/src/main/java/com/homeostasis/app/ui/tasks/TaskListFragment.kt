@@ -17,35 +17,59 @@ import com.google.android.material.snackbar.Snackbar
 import com.google.firebase.Timestamp
 import com.homeostasis.app.R
 import com.homeostasis.app.data.model.Task
+import androidx.lifecycle.lifecycleScope
+import com.homeostasis.app.data.TaskDao
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 import java.util.Calendar
 import java.util.Date
+import javax.inject.Inject
 
+/**
+ * Fragment for displaying the list of tasks.
+import androidx.lifecycle.lifecycleScope
+import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+*/
 /**
  * Fragment for displaying the list of tasks.
  */
 @AndroidEntryPoint
 class TaskListFragment : Fragment(), AddModTaskDialogFragment.AddModTaskListener, TaskAdapter.OnTaskClickListener {
 
-    private lateinit var recyclerView: RecyclerView
-    private lateinit var emptyView: TextView
-    private lateinit var addTaskButton: FloatingActionButton
-    private lateinit var taskAdapter: TaskAdapter
-    private lateinit var itemTouchHelper: ItemTouchHelper
-    private lateinit var swipeCallback: TaskSwipeCallback
+@Inject
+lateinit var taskDao: TaskDao
+
+private lateinit var recyclerView: RecyclerView
+private lateinit var emptyView: TextView
+private lateinit var addTaskButton: FloatingActionButton
+private lateinit var taskAdapter: TaskAdapter
+private lateinit var itemTouchHelper: ItemTouchHelper
+private lateinit var swipeCallback: TaskSwipeCallback
+
+// List to store tasks (would normally be in ViewModel)
+private val tasks = mutableListOf<Task>()
 
     //TODO
     // List to store tasks (would normally be in ViewModel)
-    private val tasks = mutableListOf<Task>()
-    
+    //private val tasks = mutableListOf<Task>()
+
     // Current user ID (would normally come from authentication)
     private val currentUserId = "current_user"
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+    }
 
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View? {
+        loadTasksFromDb()
         return inflater.inflate(R.layout.fragment_task_list, container, false)
     }
 
@@ -59,13 +83,23 @@ class TaskListFragment : Fragment(), AddModTaskDialogFragment.AddModTaskListener
 
         // Set up RecyclerView
         setupRecyclerView()
-        
+
         // Set up UI state
         updateUI()
 
         // Set up click listeners
         addTaskButton.setOnClickListener {
             showAddTaskDialog()
+        }
+    }
+
+    private fun loadTasksFromDb() {
+        lifecycleScope.launch {
+            taskDao.getAllTasks().collectLatest { tasksFromDb ->
+                tasks.clear()
+                tasks.addAll(tasksFromDb)
+                updateUI()
+            }
         }
     }
     
@@ -103,13 +137,13 @@ class TaskListFragment : Fragment(), AddModTaskDialogFragment.AddModTaskListener
 
         //TEMP tasks for debug
         //TODO: load tasks from local DB
-        val task = Task(
+        /*val task = Task(
             title = "Load Dishwasher",
             description = "Load the damn dishwasher",
             points = 30,
             categoryId = "Household"
         )
-        onTaskAdded(task)
+        onTaskAdded(task)*/
 
 
     }

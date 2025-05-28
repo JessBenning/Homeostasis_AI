@@ -16,6 +16,9 @@
             app:destination="@id/navigation_tasks"
             app:popUpTo="@id/navigation_auth"
             app:popUpToInclusive="true" />
+        <action
+            android:id="@+id/action_navigation_auth_to_navigation_settings"
+            app:destination="@id/navigation_settings" />
     </fragment>
 
     <!-- Tasks -->
@@ -27,7 +30,7 @@
         <action
             android:id="@+id/action_tasks_to_task_detail"
             app:destination="@id/dialog_add_task" />
-<!--        <action-->
+        <!--        <action-->
 <!--            android:id="@+id/action_tasks_to_task_create"-->
 <!--            app:destination="@id/navigation_task_create" />-->
     </fragment>
@@ -42,13 +45,7 @@
             app:argType="string" />
     </fragment>
 
-<!--    <fragment-->
-<!--        android:id="@+id/navigation_task_create"-->
-<!--        android:name="com.homeostasis.app.ui.tasks.TaskCreateFragment"-->
-<!--        android:label="@string/task_new"-->
-<!--        tools:layout="@layout/fragment_task_create" />-->
 
-<!--    &lt;!&ndash; Shopping &ndash;&gt;-->
 <!--    <fragment-->
 <!--        android:id="@+id/navigation_shopping"-->
 <!--        android:name="com.homeostasis.app.ui.shopping.ShoppingListsFragment"-->
@@ -92,16 +89,24 @@
 <!--        android:label="@string/profile_title"-->
 <!--        tools:layout="@layout/fragment_profile" />-->
 
-<!--    &lt;!&ndash; Settings &ndash;&gt;-->
-<!--    <fragment-->
-<!--        android:id="@+id/navigation_settings"-->
-<!--        android:name="com.homeostasis.app.ui.SettingsFragment"-->
-<!--        android:label="@string/settings_title"-->
-<!--        tools:layout="@layout/fragment_settings">-->
-<!--        <action-->
-<!--            android:id="@+id/action_settings_to_categories"-->
-<!--            app:destination="@id/navigation_categories" />-->
-<!--    </fragment>-->
+    
+        <!-- Household Group -->
+        <fragment
+            android:id="@+id/navigation_household_group"
+            android:name="com.homeostasis.app.ui.settings.HouseholdGroupFragment"
+            android:label="@string/title_household_group"
+            tools:layout="@layout/fragment_household_group" />
+    
+        <!-- Settings -->
+        <fragment
+            android:id="@+id/navigation_settings"
+            android:name="com.homeostasis.app.ui.settings.SettingsFragment"
+            android:label="@string/settings_title"
+            tools:layout="@layout/fragment_settings" >
+            <action
+                android:id="@+id/action_navigation_settings_to_navigation_household_group"
+                app:destination="@id/navigation_household_group" />
+        </fragment>
 
 <!--    &lt;!&ndash; Categories &ndash;&gt;-->
 <!--    <fragment-->

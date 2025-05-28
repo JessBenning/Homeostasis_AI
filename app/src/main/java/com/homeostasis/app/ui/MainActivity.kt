@@ -8,6 +8,8 @@ import androidx.navigation.ui.AppBarConfiguration
 import androidx.navigation.ui.setupActionBarWithNavController
 import androidx.navigation.ui.setupWithNavController
 import com.google.android.material.bottomnavigation.BottomNavigationView
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import android.widget.Toast
 import com.google.firebase.auth.FirebaseAuth
 import com.homeostasis.app.R
 import com.homeostasis.app.data.remote.UserRepository
@@ -50,11 +52,42 @@ class MainActivity : AppCompatActivity() {
             )
         )
         setupActionBarWithNavController(navController, appBarConfiguration)
+
+        bottomNav.setOnItemSelectedListener { item ->
+            when (item.itemId) {
+                R.id.navigation_settings -> {
+                    navController.navigate(R.id.navigation_settings)
+                    true
+                }
+                else -> false
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+
+        val data = intent?.data
+        if (data != null && data.scheme == "homeostasis" && data.host == "invite") {
+            val groupId = data.getQueryParameter("groupId")
+            if (groupId != null) {
+                // Show dialog
+                MaterialAlertDialogBuilder(this)
+                    .setTitle("Invite to Group")
+                    .setMessage("Do you want to join group $groupId?")
+                    .setPositiveButton("Join") { dialog, which ->
+                        // TODO: Implement join group logic
+                        Toast.makeText(this, "Joining group $groupId", Toast.LENGTH_SHORT).show()
+                    }
+                    .setNegativeButton("Cancel", null)
+                    .show()
+            }
+        }
     }
 
     override fun onStart() {
         super.onStart()
-        
+
         // Check if user is signed in
         val currentUser = userRepository.getCurrentUser()
         if (currentUser == null) {

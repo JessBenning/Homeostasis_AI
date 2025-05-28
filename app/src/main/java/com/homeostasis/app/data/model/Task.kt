@@ -1,5 +1,7 @@
 package com.homeostasis.app.data.model
 
+import androidx.room.Entity
+import androidx.room.PrimaryKey
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.DocumentId
 import com.google.firebase.firestore.PropertyName
@@ -23,10 +25,12 @@ data class TaskCompletion(
 /**
  * Data class representing a task in the Homeostasis app.
  */
+@Entity(tableName = "tasks")
 data class Task(
+    @PrimaryKey
     @DocumentId
     val id: String = "",
-    
+
     val title: String = "",
     
     val description: String = "",

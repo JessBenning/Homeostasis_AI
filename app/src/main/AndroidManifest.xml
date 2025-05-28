@@ -1,35 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.homeostasis.app">
-
-    <!-- Internet permission for Firebase -->
-    <uses-permission android:name="android.permission.INTERNET" />
-    <!-- Network state permission for Firebase offline capabilities -->
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <!-- Camera permission for profile pictures -->
-    <uses-permission android:name="android.permission.CAMERA" />
-    <!-- Storage permission for profile pictures -->
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    xmlns:tools="http://schemas.android.com/tools">
 
     <application
+        android:name=".HomeostasisApplication"
         android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
         android:icon="@drawable/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@drawable/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Homeostasis"
-        android:name=".HomeostasisApplication">
-
-        <!-- Main Activity -->
+        tools:targetApi="31">
         <activity
             android:name=".ui.MainActivity"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.Homeostasis"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data
+                    android:scheme="homeostasis"
+                    android:host="invite" />
+            </intent-filter>
         </activity>
-
     </application>
 
 </manifest>

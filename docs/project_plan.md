@@ -40,7 +40,13 @@
 - Task category management (add, remove)
 - Task scores by member with profile picture, ranking and score differnce between 1st rank and all others
 
-#### 1.3.3 Shopping List
+#### 1.3.3 Household Group Management
+- Create new household group
+- Invite members to household group via email with deep link
+- Accept/decline invitations to household groups
+- Manage household group members (view, remove)
+
+#### 1.3.4 Shopping List
 - Create and manage shared shopping list
 - Add/remove items from the list
 - Check off purchased items
@@ -257,6 +263,35 @@ ShoppingListItem {
 }
 ```
 
+#### 5.2.8 HouseholdGroup Model
+```
+HouseholdGroup {
+    id: String
+    name: String
+    ownerId: String (User ID)
+    createdAt: Timestamp
+}
+```
+
+#### 5.2.9 Invitation Model
+```
+Invitation {
+    id: String
+    householdGroupId: String
+    inviterId: String (User ID)
+    inviteeEmail: String
+    status: Enum (pending, accepted, declined)
+    createdAt: Timestamp
+}
+```
+
+    addedAt: Timestamp
+    isChecked: Boolean
+    checkedBy: String (User ID)
+    checkedAt: Timestamp
+}
+```
+
 ### 5.3 UI Architecture
 
 #### 5.3.1 Main Screens
@@ -370,6 +405,18 @@ ShoppingListItem {
 /shoppingHistory/{itemName}
     - lastUsed: Timestamp
     - usageCount: Integer
+
+/householdGroups/{householdGroupId}
+    - name: String
+    - ownerId: String (User ID)
+    - createdAt: Timestamp
+
+/invitations/{invitationId}
+    - householdGroupId: String
+    - inviterId: String (User ID)
+    - inviteeEmail: String
+    - status: Enum (pending, accepted, declined)
+    - createdAt: Timestamp
 ```
 
 ### 7.3 Firebase Storage Structure

@@ -71,6 +71,7 @@
     
     <!-- Settings -->
     <string name="settings_title">Settings</string>
+    <string name="title_household_group">Household Group</string>
     <string name="settings_cloud_sync">Cloud Sync</string>
     <string name="settings_cloud_sync_enabled">Enable Cloud Sync</string>
     <string name="settings_cloud_sync_frequency">Sync Frequency</string>

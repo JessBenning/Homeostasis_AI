@@ -1,5 +1,7 @@
 package com.homeostasis.app.data.model
 
+import androidx.room.Entity
+import androidx.room.PrimaryKey
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.DocumentId
 import com.google.firebase.firestore.PropertyName
@@ -7,8 +9,10 @@ import com.google.firebase.firestore.PropertyName
 /**
  * Data class representing a user in the Homeostasis app.
  */
+@Entity(tableName = "user")
 data class User(
     @DocumentId
+    @PrimaryKey
     val id: String = "",
     
     val name: String = "",
