@@ -24,6 +24,12 @@ class HomeostasisApplication : Application() {
     @Inject
     lateinit var firestore: FirebaseFirestore
 
+    @Inject
+    lateinit var taskRepository: com.homeostasis.app.data.remote.TaskRepository
+
+    @Inject
+    lateinit var firebaseSyncManager: FirebaseSyncManager
+
     override fun onCreate() {
         super.onCreate()
 
@@ -59,11 +65,11 @@ class HomeostasisApplication : Application() {
             // TODO: Initialize WorkManager for background tasks
             Log.d(TAG, "AppDatabase initialized successfully")
 
-            val syncManager = FirebaseSyncManager(appDatabase, firestore)
-            syncManager.syncTasks()
-            syncManager.syncHouseholdGroups()
-            syncManager.syncInvitations()
-            syncManager.syncUsers()
+//            val syncManager = FirebaseSyncManager(appDatabase, firestore, taskRepository, this)
+//            syncManager.syncTasks()
+//            syncManager.syncHouseholdGroups()
+//            syncManager.syncInvitations()
+//            syncManager.syncUsers()
 
         } catch (e: Exception) {
             Log.e(TAG, "Error initializing Firebase: ${e.message}", e)

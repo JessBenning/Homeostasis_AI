@@ -1,5 +1,5 @@
 package com.homeostasis.app.ui.tasks
-
+import kotlinx.coroutines.runBlocking
 import android.text.format.DateFormat
 import android.util.Log
 import android.view.LayoutInflater
@@ -16,56 +16,41 @@ import java.util.Date
  * Adapter for displaying tasks in a RecyclerView.
  */
 class TaskAdapter(
-    private val tasks: List<Task>,
+    private var tasks: List<Task>, // Your list of Task objects from the ViewModel
     private val onTaskClickListener: OnTaskClickListener
 ) : RecyclerView.Adapter<TaskAdapter.TaskViewHolder>() {
 
+    // Map to store completion counts for the current session
+    // Key: Task ID (String), Value: Completion Count (Int)
+    private val sessionCompletionCounts = mutableMapOf<String, Int>()
+
     interface OnTaskClickListener {
         fun onTaskClick(task: Task)
-        fun onCompletionDateClick(task: Task, position: Int)
+        fun onCompletionDateClick(task: Task, position: Int) // Consider if this is still needed or how it relates to completion
+        fun onTaskMarkedComplete(task: Task) // New listener method for when a task is "completed"
     }
+
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): TaskViewHolder {
         Log.d("TaskAdapter", "onCreateViewHolder called for viewType: $viewType")
         val view = LayoutInflater.from(parent.context)
             .inflate(R.layout.item_task, parent, false)
-        val viewHolder = TaskViewHolder(view)
-        Log.d("TaskAdapter", "onCreateViewHolder created: ${viewHolder.hashCode()}") // Log instance
-        return viewHolder
+        // Pass the adapter instance to the ViewHolder if it needs to trigger updates
+        return TaskViewHolder(view)
     }
 
     override fun onBindViewHolder(holder: TaskViewHolder, position: Int) {
-        Log.d("TaskAdapter", "onBindViewHolder called for position: $position, holder: ${holder.hashCode()}")
-        if (position >= tasks.size || position < 0) {
-            Log.e("TaskAdapter", "!!!! CRITICAL: onBindViewHolder attempting to bind for position $position, but tasks.size is ${tasks.size}. This will likely crash or lead to inconsistency.")
-            // You might even throw an exception here during debug to catch this state earlier:
-            // throw IndexOutOfBoundsException("onBindViewHolder: position $position is out of bounds for tasks list size ${tasks.size}")
-            return // Avoid further processing if out of bounds
-        }
+        // ... (boundary checks as you have) ...
         val task = tasks[position]
-        Log.d("TaskAdapter", "  Binding task: id=${task.id}, title='${task.title}' to holder ${holder.hashCode()}")
-        holder.bind(task, position)
+        // Get the completion count for this task from the map, default to 0 if not found
+        val currentCompletionCount = sessionCompletionCounts.getOrDefault(task.id, 0)
+        holder.bind(task, currentCompletionCount, onTaskClickListener) // Pass listener
     }
 
-//    override fun getItemCount(): Int {
-//        return tasks.size;
-//    }
 
     override fun getItemCount(): Int {
         val currentSize = tasks.size
-        Log.d("TaskAdapter", "getItemCount() called. Current tasks.size: $currentSize")
-
-        // --- TEMPORARY DEBUGGING ---
-        // This can be verbose, use with caution and remove after debugging.
-        if (currentSize > 0 && currentSize < 5) { // Log only for small lists to avoid spam
-            tasks.forEachIndexed { index, task ->
-                Log.d("TaskAdapterDebug", "  Task at index $index: id=${task.id}, title='${task.title}', isCompleted=${task.isCompleted()}")
-                // Add any other relevant properties of 'Task' you want to check
-            }
-        } else if (currentSize == 0) {
-            Log.w("TaskAdapterDebug", "getItemCount(): tasks list is empty.")
-        }
-        // --- END TEMPORARY DEBUGGING ---
+        //Log.d("TaskAdapter", "getItemCount() called. Current tasks.size: $currentSize")
 
         return currentSize
     }
@@ -78,6 +63,54 @@ class TaskAdapter(
         notifyDataSetChanged()
     }
 
+    fun hideAllBadges() {
+        notifyDataSetChanged()
+    }
+
+    fun setTasks(tasks: List<Task>) {
+        this.tasks = tasks
+        notifyDataSetChanged()
+    }
+    
+    //        private fun hasTaskHistory(task: Task): Boolean {
+    //            return runBlocking {
+    //                this@TaskAdapter.getTaskHistoryByTaskId(task.id).isNotEmpty()
+    //            }
+    //        }
+
+    // Method to be called when a task is marked as complete by the user
+    fun incrementCompletionCount(taskId: String) {
+        val currentCount = sessionCompletionCounts.getOrDefault(taskId, 0)
+        sessionCompletionCounts[taskId] = currentCount + 1
+
+        // Find the position of the task to notify item change for UI update
+        val position = tasks.indexOfFirst { it.id == taskId }
+        if (position != -1) {
+            notifyItemChanged(position)
+        }
+    }
+
+    // Method to be called when a task is marked as complete by the user
+    fun decrementCompletionCount(taskId: String): Boolean {
+        val currentCount = sessionCompletionCounts.getOrDefault(taskId, 0)
+        if (currentCount > 0)
+            sessionCompletionCounts[taskId] = currentCount -1
+        else return false
+
+        // Find the position of the task to notify item change for UI update
+        val position = tasks.indexOfFirst { it.id == taskId }
+        if (position != -1) {
+            notifyItemChanged(position)
+        }
+        return true
+    }
+
+    fun resetAllCompletionCounts() {
+        sessionCompletionCounts.clear()
+        notifyDataSetChanged() // Redraw all items
+    }
+
+
     inner class TaskViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         private val container: com.google.android.material.card.MaterialCardView = itemView.findViewById(R.id.task_container)
         private val titleTextView: TextView = itemView.findViewById(R.id.task_title)
@@ -86,56 +119,47 @@ class TaskAdapter(
         private val pointsTextView: TextView = itemView.findViewById(R.id.task_points)
         private val lastDoneTextView: TextView = itemView.findViewById(R.id.task_last_done)
         private val completionCounterTextView: TextView = itemView.findViewById(R.id.completion_counter)
+        private var completionCount: Int = 0
 
-        fun bind(task: Task, position: Int) {
+    fun bind(
+            task: Task,
+            completionCount: Int, // Receive the count from onBindViewHolder
+            listener: OnTaskClickListener
+        ) {
             titleTextView.text = task.title
             descriptionTextView.text = task.description
-            categoryTextView.text = task.categoryId // Using categoryId as name for now
+            categoryTextView.text = task.categoryId
             pointsTextView.text = "${task.points} pts"
 
-            
-            // Set completion status
-            updateCompletionStatus(task)
-            
-            // Set click listeners
-            itemView.setOnClickListener {
-                onTaskClickListener.onTaskClick(task)
-            }
-            
-            lastDoneTextView.setOnClickListener {
-                onTaskClickListener.onCompletionDateClick(task, position)
-            }
-        }
-        
-        private fun updateCompletionStatus(task: Task) {
-            // Update the task item background based on completion status
-            container.isActivated = task.isCompleted()
-            
-            // Update the last done text
-            if (task.isCompleted() && task.lastCompletedAt != null) {
-                val dateFormat = DateFormat.getDateFormat(itemView.context)
-                val formattedDate = dateFormat.format(Date(task.lastCompletedAt!!.seconds * 1000))
-                lastDoneTextView.text = itemView.context.getString(
-                    R.string.task_last_done,
-                    formattedDate,
-                    task.lastCompletedBy.takeIf { it.isNotEmpty() } ?: "Unknown"
-                )
-            } else {
-                lastDoneTextView.text = itemView.context.getString(R.string.task_never_done)
-            }
-            
+
+
+            Log.d("TaskAdapter","counter= ${completionCount}, title='${task.title}'")
+
             // Update the completion counter
-            if (task.completionCount == 1) {
+            if (completionCount == 1) {
                 completionCounterTextView.visibility = View.VISIBLE
                 completionCounterTextView.text = "\u2713"
             }
-            else if (task.completionCount > 1) {
+            else if (completionCount > 1) {
                 completionCounterTextView.visibility = View.VISIBLE
-                completionCounterTextView.text = "\u2713"+" x "+task.completionCount.toString()
+                completionCounterTextView.text = "\u2713"+" x "+completionCount.toString()
             }
             else{
                 completionCounterTextView.visibility = View.GONE
             }
+
+            // Set click listeners
+            itemView.setOnClickListener {
+                // listener.onTaskClick(task) // Remove or call this too if needed
+                listener.onTaskMarkedComplete(task) // THIS WILL TRIGGER THE COUNT INCREMENT
+            }
+
+            lastDoneTextView.setOnClickListener {
+                onTaskClickListener.onCompletionDateClick(task, position)
+            }
+            
         }
+    
+
     }
 }

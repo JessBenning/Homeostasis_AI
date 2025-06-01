@@ -9,12 +9,12 @@ import android.widget.AutoCompleteTextView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.fragment.app.DialogFragment
+import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.textfield.TextInputEditText
 import com.google.firebase.Timestamp
 import com.homeostasis.app.R
-import com.homeostasis.app.data.TaskDao
 import com.homeostasis.app.data.model.Task
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
@@ -31,11 +31,9 @@ class AddModTaskDialogFragment : DialogFragment() {
         fun onTaskModified(task: Task)
     }
 
+    private val viewModel: TaskListViewModel by viewModels()
     private var listener: AddModTaskListener? = null
     private var existingTask: Task? = null
-
-    @Inject
-    lateinit var taskDao: TaskDao
 
     // UI components
     private lateinit var dialogTitle: TextView
@@ -149,19 +147,17 @@ class AddModTaskDialogFragment : DialogFragment() {
             lastModifiedAt = Timestamp.now()
         )
 
-        // Save the task to the local database
-        lifecycleScope.launch {
-            taskDao.insertTask(task)
+        // Add the task to ViewModel
+        viewModel.addTask(task)
 
-            // Notify the listener
-            listener?.onTaskAdded(task)
+        // Notify the listener
+        listener?.onTaskAdded(task)
 
-            // Show a success message
-            Toast.makeText(requireContext(), "Task added successfully", Toast.LENGTH_SHORT).show()
+        // Show a success message
+        Toast.makeText(requireContext(), "Task added successfully", Toast.LENGTH_SHORT).show()
 
-            // Dismiss the dialog
-            dismiss()
-        }
+        // Dismiss the dialog
+        dismiss()
     }
 
     private fun updateExistingTask() {
@@ -186,19 +182,17 @@ class AddModTaskDialogFragment : DialogFragment() {
             // All other fields (id, createdBy, createdAt, completion history, etc.) are preserved
         )
 
-        // Save the task to the local database
-        lifecycleScope.launch {
-            taskDao.updateTask(updatedTask)
+        // Update the task in ViewModel
+        viewModel.updateTask(updatedTask)
 
-            // Notify the listener
-            listener?.onTaskModified(updatedTask)
+        // Notify the listener
+        listener?.onTaskModified(updatedTask)
 
-            // Show a success message
-            Toast.makeText(requireContext(), "Task updated successfully", Toast.LENGTH_SHORT).show()
+        // Show a success message
+        Toast.makeText(requireContext(), "Task updated successfully", Toast.LENGTH_SHORT).show()
 
-            // Dismiss the dialog
-            dismiss()
-        }
+        // Dismiss the dialog
+        dismiss()
     }
 
     fun setAddModTaskListener(listener: AddModTaskListener) {

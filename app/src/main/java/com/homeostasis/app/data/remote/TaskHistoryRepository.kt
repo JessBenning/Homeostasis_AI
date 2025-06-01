@@ -8,11 +8,12 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.tasks.await
 import java.util.Date
+import com.homeostasis.app.data.AppDatabase
 
 /**
  * Repository for task history-related operations.
  */
-class TaskHistoryRepository : FirebaseRepository<TaskHistory>() {
+class TaskHistoryRepository(private val context: android.content.Context) : FirebaseRepository<TaskHistory>() {
     
     override val collectionName: String = TaskHistory.COLLECTION
     
@@ -23,7 +24,8 @@ class TaskHistoryRepository : FirebaseRepository<TaskHistory>() {
         taskId: String,
         userId: String,
         pointValue: Int,
-        customCompletionDate: Date? = null
+        customCompletionDate: Date? = null,
+        context: android.content.Context
     ): String? {
         return try {
             val taskHistory = TaskHistory(
@@ -31,12 +33,22 @@ class TaskHistoryRepository : FirebaseRepository<TaskHistory>() {
                 userId = userId,
                 completedAt = Timestamp.now(),
                 pointValue = pointValue,
-                customCompletionDate = customCompletionDate,
+                customCompletionDate = customCompletionDate as? Timestamp,
+                isDeleted = false,
+                isArchived = false,
+                archivedInResetId = null,
                 lastModifiedAt = Timestamp.now()
             )
-            add(taskHistory)
+
+            // Insert into local DB
+            val taskHistoryDao = AppDatabase.getDatabase(context = context).taskHistoryDao()
+            taskHistoryDao.insert(taskHistory)
+
+
+            val documentReference = collection.add(taskHistory).await()
+            return documentReference.id
         } catch (e: Exception) {
-            null
+            return null
         }
     }
     
@@ -56,6 +68,9 @@ class TaskHistoryRepository : FirebaseRepository<TaskHistory>() {
             emptyList()
         }
     }
+//    suspend fun clearTaskHistory() {
+//        taskHistoryDao.clearTable()
+//    }
     
     /**
      * Get task history for a specific task as a Flow.
@@ -123,12 +138,12 @@ class TaskHistoryRepository : FirebaseRepository<TaskHistory>() {
     /**
      * Get task history for a specific time period.
      */
-    suspend fun getTaskHistoryByTimePeriod(startDate: Date, endDate: Date): List<TaskHistory> {
+    suspend fun getTaskHistoryByTimePeriod(startDate: Timestamp, endDate: Timestamp): List<TaskHistory> {
         return try {
             collection
                 .whereEqualTo("isDeleted", false)
-                .whereGreaterThanOrEqualTo("completedAt", Timestamp(startDate))
-                .whereLessThanOrEqualTo("completedAt", Timestamp(endDate))
+                .whereGreaterThanOrEqualTo("completedAt", startDate)
+                .whereLessThanOrEqualTo("completedAt", endDate)
                 .orderBy("completedAt", Query.Direction.DESCENDING)
                 .get()
                 .await()

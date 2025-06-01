@@ -12,9 +12,10 @@
     <!-- Navigation -->
     <string name="nav_tasks">Tasks</string>
     <string name="nav_shopping">Shop</string>
-    <string name="nav_leaderboard">Score</string>
+    <string name="nav_task_history">Score</string>
     <string name="nav_profile">Me</string>
     <string name="nav_settings">Settings</string>
+
     
     <!-- Tasks -->
     <string name="tasks_title">Tasks</string>
@@ -54,12 +55,12 @@
     <string name="shopping_recent_items">Recent Items</string>
     <string name="shopping_items_count">%1$d items (%2$d checked)</string>
     
-    <!-- Leaderboard -->
-    <string name="leaderboard_title">Leaderboard</string>
-    <string name="leaderboard_reset">Reset</string>
-    <string name="leaderboard_points">%1$d pts</string>
-    <string name="leaderboard_points_behind">(%1$d pts behind leader)</string>
-    <string name="leaderboard_task_history">Task Completion History</string>
+    <!-- task_history -->
+    <string name="task_history_title">task_history</string>
+    <string name="task_history_reset">Reset</string>
+    <string name="task_history_points">%1$d pts</string>
+    <string name="task_history_points_behind">(%1$d pts behind leader)</string>
+    <string name="task_history_completion">Task Completion History</string>
     
     <!-- Profile -->
     <string name="profile_title">My Profile</string>

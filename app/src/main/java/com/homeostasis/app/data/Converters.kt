@@ -17,14 +17,4 @@ class Converters {
         return timestamp?.seconds
     }
 
-    @TypeConverter
-    fun fromString(value: String?): List<com.homeostasis.app.data.model.TaskCompletion>? {
-        val listType: Type = object : TypeToken<List<com.homeostasis.app.data.model.TaskCompletion>?>() {}.type
-        return Gson().fromJson(value, listType)
-    }
-
-    @TypeConverter
-    fun toString(list: List<com.homeostasis.app.data.model.TaskCompletion>?): String? {
-        return Gson().toJson(list)
-    }
 }

@@ -1,9 +1,16 @@
 package com.homeostasis.app.di
 
+
+import android.content.Context
+import androidx.room.Room
+import com.google.firebase.firestore.FirebaseFirestore
+import com.homeostasis.app.data.AppDatabase
+import com.homeostasis.app.data.TaskDao
 import com.homeostasis.app.data.remote.*
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 
@@ -22,16 +29,28 @@ object FirebaseModule {
     
     @Provides
     @Singleton
-    fun provideTaskRepository(): TaskRepository {
-        return TaskRepository()
+    fun provideTaskRepository(taskDao: TaskDao): TaskRepository {
+        return TaskRepository(taskDao)
     }
-    
+
     @Provides
     @Singleton
-    fun provideTaskHistoryRepository(): TaskHistoryRepository {
-        return TaskHistoryRepository()
+    fun provideTaskHistoryRepository(@ApplicationContext context: Context): TaskHistoryRepository {
+        return TaskHistoryRepository(context)
     }
-    
+
+
+    @Provides
+    @Singleton
+    fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase {
+        return Room.databaseBuilder(
+            context,
+            AppDatabase::class.java,
+            "app_database"
+        ).build()
+    }
+
+
     @Provides
     @Singleton
     fun provideCategoryRepository(): CategoryRepository {
@@ -79,4 +98,18 @@ object FirebaseModule {
     fun provideFirebaseStorageRepository(): FirebaseStorageRepository {
         return FirebaseStorageRepository()
     }
+
+    @Provides
+    @Singleton
+    fun provideFirebaseFirestore(): FirebaseFirestore {
+        return FirebaseFirestore.getInstance()
+    }
+
+    @Provides
+    @Singleton
+    fun provideTaskDao(appDatabase: AppDatabase): TaskDao {
+        return appDatabase.taskDao()
+    }
+
+    
 }

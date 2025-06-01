@@ -19,6 +19,9 @@
         <action
             android:id="@+id/action_navigation_auth_to_navigation_settings"
             app:destination="@id/navigation_settings" />
+        <action
+            android:id="@+id/action_navigation_auth_to_navigation_task_history"
+            app:destination="@id/navigation_task_history" />
     </fragment>
 
     <!-- Tasks -->
@@ -37,7 +40,7 @@
 
     <fragment
         android:id="@+id/dialog_add_task"
-        android:name="com.homeostasis.app.ui.tasks.AddTaskDialogFragment"
+        android:name="com.homeostasis.app.ui.tasks.AddModTaskDialogFragment"
         android:label="Add Task"
         tools:layout="@layout/dialog_add_task">
         <argument
@@ -75,12 +78,12 @@
 <!--        android:label="@string/shopping_list_new"-->
 <!--        tools:layout="@layout/fragment_shopping_create" />-->
 
-<!--    &lt;!&ndash; Leaderboard &ndash;&gt;-->
-<!--    <fragment-->
-<!--        android:id="@+id/navigation_leaderboard"-->
-<!--        android:name="com.homeostasis.app.ui.LeaderboardFragment"-->
-<!--        android:label="@string/leaderboard_title"-->
-<!--        tools:layout="@layout/fragment_leaderboard" />-->
+    <!-- Leaderboard -->
+    <fragment
+        android:id="@+id/navigation_task_history"
+        android:name="com.homeostasis.app.ui.task_history.TaskHistoryFragment"
+        android:label="@string/task_history_title"
+        tools:layout="@layout/fragment_task_history" />
 
 <!--    &lt;!&ndash; Profile &ndash;&gt;-->
 <!--    <fragment-->

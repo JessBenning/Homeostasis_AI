@@ -1,5 +1,7 @@
 package com.homeostasis.app.data.model
 
+import androidx.room.Entity
+import androidx.room.PrimaryKey
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.DocumentId
 import com.google.firebase.firestore.PropertyName
@@ -8,7 +10,9 @@ import java.util.Date
 /**
  * Data class representing a task completion history entry in the Homeostasis app.
  */
+@Entity(tableName = "task_history")
 data class TaskHistory(
+    @PrimaryKey
     @DocumentId
     val id: String = "",
     
@@ -25,7 +29,7 @@ data class TaskHistory(
     val pointValue: Int = 0,
     
     @PropertyName("customCompletionDate")
-    val customCompletionDate: Date? = null,
+    val customCompletionDate: Timestamp? = null,
     
     @PropertyName("isDeleted")
     val isDeleted: Boolean = false,
@@ -46,7 +50,7 @@ data class TaskHistory(
         userId = "",
         completedAt = Timestamp.now(),
         pointValue = 0,
-        customCompletionDate = null,
+        customCompletionDate = Timestamp.now(),
         isDeleted = false,
         isArchived = false,
         archivedInResetId = null,

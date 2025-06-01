@@ -15,6 +15,7 @@ import com.homeostasis.app.R
 import com.homeostasis.app.data.remote.UserRepository
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
+import com.homeostasis.app.ui.task_history.TaskHistoryFragment
 
 /**
  * Main activity for the Homeostasis app.
@@ -45,8 +46,8 @@ class MainActivity : AppCompatActivity() {
         val appBarConfiguration = AppBarConfiguration(
             setOf(
                 R.id.navigation_tasks,
+                R.id.navigation_task_history,
                 R.id.navigation_shopping,
-                R.id.navigation_leaderboard,
                 R.id.navigation_profile,
                 R.id.navigation_settings
             )
@@ -57,6 +58,10 @@ class MainActivity : AppCompatActivity() {
             when (item.itemId) {
                 R.id.navigation_tasks -> {
                     navController.navigate(R.id.navigation_tasks)
+                    true
+                }
+                R.id.navigation_task_history -> {
+                    navController.navigate(R.id.navigation_task_history)
                     true
                 }
                 R.id.navigation_settings -> {
