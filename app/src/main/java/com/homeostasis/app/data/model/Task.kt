@@ -36,7 +36,15 @@ data class Task(
     val createdAt: Timestamp = Timestamp.now(),
 
     @PropertyName("lastModifiedAt")
-    val lastModifiedAt: Timestamp = Timestamp.now()
+    val lastModifiedAt: Timestamp = Timestamp.now(),
+
+    var needsSync: Boolean = false,         // Default to false, set to true when local changes occur
+
+    var isDeletedLocally: Boolean = false,
+
+    @PropertyName("isCompleted") // Good practice for Firestore
+    val isCompleted: Boolean = false,
+
 ) {
     // Empty constructor for Firestore
     constructor() : this(
@@ -47,6 +55,7 @@ data class Task(
         categoryId = "",
         createdBy = "",
         isDeleted = false,
+        needsSync = false,
         createdAt = Timestamp.now(),
         lastModifiedAt = Timestamp.now(),
     )

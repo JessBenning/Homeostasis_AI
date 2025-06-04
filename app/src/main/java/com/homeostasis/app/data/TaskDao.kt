@@ -8,27 +8,52 @@ import kotlinx.coroutines.flow.Flow
 interface TaskDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertTask(task: Task)
+    suspend fun upsertTask(task: Task) // Consolidated insert/update
 
-    @Query("SELECT * FROM ${Task.COLLECTION} WHERE isDeleted = 0 ORDER BY createdAt DESC")
-    fun getActiveTasks(): Flow<List<Task>>
+    @Update // Keep if you have specific use cases where you ONLY want to update existing
+    // and fail if the task doesn't exist, otherwise upsertTask covers it.
+    suspend fun updateTask(task: Task) // If keeping, ensure its use is distinct from upsert
 
-    @Update
-    suspend fun updateTask(task: Task)
-
-    // Used by TaskRepository to fetch the task before updating its isDeleted flag
-    @Query("SELECT * FROM ${Task.COLLECTION} WHERE id = :taskId")
-    suspend fun getTaskById(taskId: String): Task?
-
-    // Used by FirebaseSyncManager for Part 1 (local to remote sync)
-    @Query("SELECT * FROM ${Task.COLLECTION} ORDER BY createdAt DESC") // Gets ALL, including those marked isDeleted=true
-    fun getAllTasksIncludingDeleted(): Flow<List<Task>>
-
-    // Used by FirebaseSyncManager AFTER successful Firestore deletion
     @Delete
-    suspend fun deleteTask(task: Task) // The actual hard delete
+    suspend fun hardDeleteTaskFromRoom(task: Task) // Consolidated hard delete
 
-    @Query("SELECT * FROM ${Task.COLLECTION}")
-    fun getAllTasks(): Flow<List<Task>>
+    @Query("SELECT * FROM tasks WHERE id = :taskId")
+    suspend fun getTaskById(taskId: String): Task? // Non-Flow access
 
+    @Query("SELECT * FROM tasks WHERE id = :taskId")
+    fun getTaskByIdAsFlow(taskId: String): Flow<Task?> // Flow access for a single task
+
+    // In TaskDao.kt
+    @Query("SELECT * FROM tasks")
+    fun getAllTasksFlow(): Flow<List<Task>>
+
+    /**
+     * Gets tasks that should be visible in the UI.
+     */
+    @Query("SELECT * FROM tasks WHERE isDeletedLocally = 0 AND isDeleted = 0 ORDER BY lastModifiedAt DESC")
+    fun getActiveVisibleTasks(): Flow<List<Task>>
+
+    /**
+     * For FirebaseSyncManager: Gets tasks marked for local deletion that need this status synced to Firestore.
+     */
+    @Query("SELECT * FROM tasks WHERE isDeletedLocally = 1 AND needsSync = 1 ORDER BY lastModifiedAt ASC") // ASC to process older ones first
+    fun getLocallyDeletedTasksRequiringSync(): Flow<List<Task>>
+
+    /**
+     * For FirebaseSyncManager: Gets tasks (not marked for local deletion) that have local
+     * modifications and need to be created/updated in Firestore.
+     */
+    @Query("SELECT * FROM tasks WHERE isDeletedLocally = 0 AND needsSync = 1 ORDER BY lastModifiedAt ASC") // ASC to process older ones first
+    fun getModifiedTasksRequiringSync(): Flow<List<Task>>
+
+    /**
+     * For FirebaseSyncManager: Gets all tasks from Room. Used during the remote-to-local sync
+     * to compare with what's in Firestore. It's a one-time fetch, not a Flow.
+     */
+    @Query("SELECT * FROM tasks") // No specific order needed here usually, as it's for a snapshot comparison
+    suspend fun getAllTasksFromRoomSnapshot(): List<Task>
+
+    // Optional: If you still need a Flow of all tasks for some other purpose.
+    // @Query("SELECT * FROM tasks ORDER BY createdAt DESC")
+    // fun getAllTasksFlow(): Flow<List<Task>>
 }

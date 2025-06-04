@@ -8,8 +8,15 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import android.content.Context
 import androidx.room.Room
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
+
 //TODO: change exportSchema to true for production
-@Database(entities = [Task::class, com.homeostasis.app.data.model.HouseholdGroup::class, com.homeostasis.app.data.model.Invitation::class, com.homeostasis.app.data.model.User::class, com.homeostasis.app.data.model.TaskHistory::class], version = 5, exportSchema = false)
+@Database(
+    entities = [Task::class, com.homeostasis.app.data.model.HouseholdGroup::class, com.homeostasis.app.data.model.Invitation::class, com.homeostasis.app.data.model.User::class, com.homeostasis.app.data.model.TaskHistory::class],
+    version = 8,
+    exportSchema = true
+)
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun taskDao(): TaskDao
@@ -28,7 +35,12 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "app_database"
-                ).addMigrations(MIGRATION_4_5).build()
+                ).addMigrations(
+                    MIGRATION_4_5,
+                    MIGRATION_5_6,
+                    MIGRATION_6_7,
+                    MIGRATION_7_8
+                ).build()
                 INSTANCE = instance
                 instance
             }
@@ -42,6 +54,27 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE tasks ADD COLUMN needsSync INTEGER NOT NULL DEFAULT 0")
+                database.execSQL("ALTER TABLE tasks ADD COLUMN isDeletedLocally INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                // Add the new 'isCompleted' column to the 'tasks' table.
+                // SQLite uses INTEGER for booleans (0 for false, 1 for true).
+                // NOT NULL DEFAULT 0 sets new rows and existing rows (for this new column) to false.
+                database.execSQL("ALTER TABLE tasks ADD COLUMN isCompleted INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE task_history ADD COLUMN needsSync INTEGER NOT NULL DEFAULT 0")
+            }
+        }
     }
 
 }

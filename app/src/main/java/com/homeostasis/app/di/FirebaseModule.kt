@@ -6,6 +6,7 @@ import androidx.room.Room
 import com.google.firebase.firestore.FirebaseFirestore
 import com.homeostasis.app.data.AppDatabase
 import com.homeostasis.app.data.TaskDao
+import com.homeostasis.app.data.TaskHistoryDao
 import com.homeostasis.app.data.remote.*
 import dagger.Module
 import dagger.Provides
@@ -29,8 +30,8 @@ object FirebaseModule {
     
     @Provides
     @Singleton
-    fun provideTaskRepository(taskDao: TaskDao): TaskRepository {
-        return TaskRepository(taskDao)
+    fun provideTaskRepository(): TaskRepository {
+        return TaskRepository()
     }
 
     @Provides
@@ -47,7 +48,14 @@ object FirebaseModule {
             context,
             AppDatabase::class.java,
             "app_database"
-        ).build()
+        )
+            .addMigrations(
+                AppDatabase.MIGRATION_4_5,
+                AppDatabase.MIGRATION_5_6,
+                AppDatabase.MIGRATION_6_7,
+                AppDatabase.MIGRATION_7_8
+            )
+            .build()
     }
 
 
@@ -111,5 +119,8 @@ object FirebaseModule {
         return appDatabase.taskDao()
     }
 
-    
+    @Provides
+    fun provideTaskHistoryDao(appDatabase: AppDatabase): TaskHistoryDao {
+        return appDatabase.taskHistoryDao()
+    }
 }

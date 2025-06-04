@@ -1,5 +1,6 @@
 package com.homeostasis.app.data.remote
 
+import android.util.Log
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.Query
 import com.homeostasis.app.data.model.TaskHistory
@@ -25,30 +26,60 @@ class TaskHistoryRepository(private val context: android.content.Context) : Fire
         userId: String,
         pointValue: Int,
         customCompletionDate: Date? = null,
-        context: android.content.Context
-    ): String? {
+        // context: android.content.Context // No longer needed if DAO is injected or handled by ViewModel
+        taskHistoryId: String // It's better to generate ID in ViewModel/before calling repo
+    ): Boolean { // Return Boolean for success
+        val TAG_REPO_RECORD = "TaskHistoryRepo_Record"
         return try {
-            val taskHistory = TaskHistory(
+            val newHistory = TaskHistory(
+                id = taskHistoryId, // Use pre-generated ID
                 taskId = taskId,
                 userId = userId,
                 completedAt = Timestamp.now(),
                 pointValue = pointValue,
-                customCompletionDate = customCompletionDate as? Timestamp,
+                customCompletionDate = customCompletionDate?.let { Timestamp(it) }, // Convert Date to Timestamp
                 isDeleted = false,
                 isArchived = false,
                 archivedInResetId = null,
-                lastModifiedAt = Timestamp.now()
+                lastModifiedAt = Timestamp.now(),
+                // needsSync = true // <<<< ADD THIS if you adopt a 'needsSync' flag model
             )
 
-            // Insert into local DB
-            val taskHistoryDao = AppDatabase.getDatabase(context = context).taskHistoryDao()
-            taskHistoryDao.insert(taskHistory)
+            val localTaskHistoryDao = AppDatabase.getDatabase(this.context).taskHistoryDao() // Use class context
+            localTaskHistoryDao.insert(newHistory) // Still write locally first
+            Log.d(TAG_REPO_RECORD, "TaskHistory ${newHistory.id} inserted into local Room DB.")
 
-
-            val documentReference = collection.add(taskHistory).await()
-            return documentReference.id
+            // Now attempt to write to Firestore as well
+            collection.document(newHistory.id).set(newHistory).await() // Use set with ID for consistency
+            Log.d(TAG_REPO_RECORD, "TaskHistory ${newHistory.id} also attempted to write to Firestore.")
+            true // Firestore write succeeded
         } catch (e: Exception) {
-            return null
+            Log.e(TAG_REPO_RECORD, "Error in recordTaskCompletion for $taskId (ID: $taskHistoryId)", e)
+            // If Firestore write failed, it's still in Room and SyncManager should pick it up.
+            false // Indicate Firestore write failed
+        }
+    }
+
+    /**
+     * Creates a new TaskHistory document in Firestore or updates it if it already exists.
+     * This method is intended to be called by the FirebaseSyncManager to push local changes to remote.
+     */
+    suspend fun createOrUpdateFirestoreTaskHistory(taskHistory: TaskHistory): Boolean {
+        val TAG_REPO = "TaskHistoryRepo_Sync" // Specific tag
+        return try {
+            if (taskHistory.id.isBlank()) {
+                Log.e(TAG_REPO, "TaskHistory ID is blank. Cannot sync to Firestore. Data: $taskHistory")
+                return false // Firestore document IDs cannot be blank
+            }
+            Log.d(TAG_REPO, "Attempting to write/update TaskHistory to Firestore: ID=${taskHistory.id}")
+            // Using collection.document(id).set(data, SetOptions.merge()) is robust for create or update
+            collection.document(taskHistory.id).set(taskHistory, com.google.firebase.firestore.SetOptions.merge()).await()
+            Log.d(TAG_REPO, "Successfully wrote/updated TaskHistory ${taskHistory.id} to Firestore.")
+            true
+        } catch (e: Exception) {
+            // Log the specific error, which might be the UnknownHostException
+            Log.e(TAG_REPO, "Error writing/updating TaskHistory ${taskHistory.id} to Firestore. Collection: $collectionName", e)
+            false
         }
     }
     

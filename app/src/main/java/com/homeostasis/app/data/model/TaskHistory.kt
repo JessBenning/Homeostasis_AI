@@ -41,8 +41,11 @@ data class TaskHistory(
     val archivedInResetId: String? = null,
     
     @PropertyName("lastModifiedAt")
-    val lastModifiedAt: Timestamp = Timestamp.now()
-) {
+    val lastModifiedAt: Timestamp = Timestamp.now(),
+
+    val needsSync: Boolean = false,
+
+    ) {
     // Empty constructor for Firestore
     constructor() : this(
         id = "",
@@ -54,6 +57,7 @@ data class TaskHistory(
         isDeleted = false,
         isArchived = false,
         archivedInResetId = null,
+        needsSync = false,
         lastModifiedAt = Timestamp.now()
     )
     
