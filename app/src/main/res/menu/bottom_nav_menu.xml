@@ -11,10 +11,10 @@
         android:icon="@drawable/ic_task_history"
         android:title="@string/nav_task_history" />
 
-    <item
-        android:id="@+id/navigation_shopping"
-        android:icon="@drawable/ic_shopping"
-        android:title="@string/nav_shopping" />
+<!--    <item-->
+<!--        android:id="@+id/navigation_shopping"-->
+<!--        android:icon="@drawable/ic_shopping"-->
+<!--        android:title="@string/nav_shopping" />-->
 
     <item
         android:id="@+id/navigation_profile"

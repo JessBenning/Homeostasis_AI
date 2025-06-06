@@ -10,12 +10,11 @@ import androidx.navigation.ui.setupWithNavController
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.widget.Toast
-import com.google.firebase.auth.FirebaseAuth
 import com.homeostasis.app.R
 import com.homeostasis.app.data.remote.UserRepository
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
-import com.homeostasis.app.ui.task_history.TaskHistoryFragment
+
 
 /**
  * Main activity for the Homeostasis app.
@@ -47,7 +46,7 @@ class MainActivity : AppCompatActivity() {
             setOf(
                 R.id.navigation_tasks,
                 R.id.navigation_task_history,
-                R.id.navigation_shopping,
+              //  R.id.navigation_shopping,
                 R.id.navigation_profile,
                 R.id.navigation_settings
             )

@@ -12,9 +12,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
-import com.homeostasis.app.R // Make sure this R import is correct
-import com.homeostasis.app.databinding.FragmentTaskHistoryBinding // Using View Binding
+import com.homeostasis.app.databinding.FragmentTaskHistoryBinding
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 
@@ -60,7 +58,7 @@ class TaskHistoryFragment : Fragment() {
         // and restarts when it's created again.
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.taskHistoryItems.collect { feedItems ->
+                viewModel.feedItems.collect { feedItems ->
                     if (feedItems.isNotEmpty()) {
                         Log.d("TaskHistoryFragment", "Observed ${feedItems.size} feed items. First item: ${feedItems.firstOrNull()}")
                         taskHistoryAdapter.submitList(feedItems)
