@@ -1,121 +1,161 @@
 package com.homeostasis.app.ui.task_history
 
+import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import androidx.recyclerview.widget.RecyclerView
-import com.homeostasis.app.data.model.TaskHistory
-import com.homeostasis.app.data.model.UserScore
-import java.lang.IllegalArgumentException
-import android.view.LayoutInflater
-import com.homeostasis.app.R
 import android.widget.ImageView
+import android.widget.TextView
+//import androidx.compose.ui.semantics.error
+import androidx.recyclerview.widget.DiffUtil
+import androidx.recyclerview.widget.ListAdapter // Import ListAdapter
+import androidx.recyclerview.widget.RecyclerView
+//import androidx.wear.compose.material.placeholder
+import com.bumptech.glide.Glide // Assuming you'll use Glide for image loading
+import com.homeostasis.app.R
+import com.homeostasis.app.ui.task_history.TaskHistoryFeedItem // Import your sealed class
+import com.homeostasis.app.ui.task_history.TaskHistoryFeedItem.TaskHistoryItem
+import com.homeostasis.app.ui.task_history.TaskHistoryFeedItem.UserScoreSummaryItem
+import com.homeostasis.app.data.Converters
+// Remove unused imports like AppDatabase, Task, coroutine related ones if not directly used here for now
 
-import com.homeostasis.app.data.AppDatabase
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob // Import SupervisorJob
-import kotlinx.coroutines.cancel // Import cancel
-import kotlinx.coroutines.launch // Import launch
-import kotlinx.coroutines.withContext
-import com.homeostasis.app.data.model.Task
+// Define your TaskHistoryFeedItem sealed class (if not already in a separate file)
+// This should be in its own file, e.g., data/model/TaskHistoryFeedItem.kt
+// sealed class TaskHistoryFeedItem {
+//     data class UserScoreSummaryItem(
+//         val userId: String,
+//         val userName: String,
+//         val profilePictureUrl: String?,
+//         val totalScore: Int,
+//         val lastActivityTimestamp: Long // For sorting or display
+//     ) : TaskHistoryFeedItem()
 
-class TaskHistoryAdapter(val dataSet: MutableList<Any>, private val db: AppDatabase) :
-RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+//     data class TaskHistoryLogItem(
+//         val logId: String, // Unique ID for this log entry
+//         val taskId: String,
+//         val taskName: String, // Denormalized for direct display
+//         val taskDescription: String?, // Denormalized
+//         val pointsAwarded: Int,
+//         val completedByUserId: String,
+//         val completedByUserName: String, // Denormalized
+//         val completedAtTimestamp: Long, // Use Long for easier sorting/conversion
+//         val completedAtFormatted: String // Pre-formatted date string
+//     ) : TaskHistoryFeedItem()
+// }
 
 
-    // Define a CoroutineScope for the adapter
-    private val adapterScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+class TaskHistoryAdapter :
+    ListAdapter<TaskHistoryFeedItem, RecyclerView.ViewHolder>(TaskHistoryFeedItemDiffCallback()) {
 
-    class UserScoreViewHolder(view: View) : RecyclerView.ViewHolder(view) {
-        val userProfilePicture: android.widget.ImageView = view.findViewById(com.homeostasis.app.R.id.user_profile_picture)
-        val userName: android.widget.TextView = view.findViewById(com.homeostasis.app.R.id.user_name)
-        val userScore: android.widget.TextView = view.findViewById(com.homeostasis.app.R.id.user_score)
+    // Define ViewHolders inside or outside, but they need to be accessible
+    // UserScoreSummaryItem ViewHolder
+    class UserScoreSummaryViewHolder(view: View) : RecyclerView.ViewHolder(view) {
+        private val userProfilePicture: ImageView = view.findViewById(R.id.user_profile_picture)
+        private val userName: TextView = view.findViewById(R.id.user_name)
+        private val userScore: TextView = view.findViewById(R.id.user_score) // Make sure ID matches your XML
+
+        fun bind(item: UserScoreSummaryItem) {
+            userName.text = item.userName
+            userScore.text = itemView.context.getString(R.string.profile_current_score, item.totalScore) // Example: "Score: 100"
+
+            Glide.with(itemView.context)
+                .load(item.userProfilePicUrl)
+                .placeholder(R.drawable.ic_default_profile) // Add a default placeholder
+                .error(R.drawable.ic_profile_load_error) // Add an error placeholder
+                .circleCrop()
+                .into(userProfilePicture)
+        }
     }
 
-    class TaskHistoryItemViewHolder(view: View) : RecyclerView.ViewHolder(view) {
-        val taskName: android.widget.TextView = view.findViewById(com.homeostasis.app.R.id.task_name)
-        val taskDescription: android.widget.TextView = view.findViewById(com.homeostasis.app.R.id.task_description)
-        val taskCompletedDate: android.widget.TextView = view.findViewById(com.homeostasis.app.R.id.task_completed_date)
+    // TaskHistoryLogItem ViewHolder
+    class TaskHistoryLogViewHolder(view: View) : RecyclerView.ViewHolder(view) {
+        // Ensure these IDs match your item_task_history_log.xml
+        private val taskName: TextView = view.findViewById(R.id.log_item_task_name)
+        private val points: TextView = view.findViewById(R.id.log_item_points)
+        private val completedBy: TextView = view.findViewById(R.id.log_item_completed_by)
+        private val completedDate: TextView = view.findViewById(R.id.log_item_completed_date)
+
+
+        fun bind(item: TaskHistoryItem) {
+            taskName.text = item.taskTitle
+            points.text = itemView.context.getString(R.string.task_history_points, item.points) // Example "+25 pts"
+            completedBy.text = itemView.context.getString(R.string.task_history_completed_by, item.completedByUserName) // Example: "Completed by: John"
+            completedDate.text = Converters.formatTimestampToString(item.completedAt)
+
+        }
     }
 
     override fun getItemViewType(position: Int): Int {
-        return when (dataSet[position]) {
-            is UserScore -> VIEW_TYPE_USER_SCORE
-            is TaskHistory -> VIEW_TYPE_TASK_HISTORY_ITEM
-            else -> throw IllegalArgumentException("Invalid data type")
+        return when (getItem(position)) { // Use getItem(position)
+            is UserScoreSummaryItem -> VIEW_TYPE_USER_SCORE_SUMMARY
+            is TaskHistoryItem -> VIEW_TYPE_TASK_HISTORY_LOG
+            // null can happen if the list is being updated, handle gracefully if needed,
+            // though ListAdapter often handles this timing.
+            // Consider if you need a null check if getItem(position) could be null during diffing.
+            else -> throw IllegalArgumentException("Unknown view type at position $position")
         }
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
         return when (viewType) {
-            VIEW_TYPE_USER_SCORE -> {
+            VIEW_TYPE_USER_SCORE_SUMMARY -> {
                 val view = LayoutInflater.from(parent.context)
-                    .inflate(com.homeostasis.app.R.layout.user_score_item, parent, false)
-                UserScoreViewHolder(view)
+                    .inflate(R.layout.user_score_item, parent, false) // Ensure this XML is correct
+                UserScoreSummaryViewHolder(view)
             }
-            VIEW_TYPE_TASK_HISTORY_ITEM -> {
+            VIEW_TYPE_TASK_HISTORY_LOG -> {
                 val view = LayoutInflater.from(parent.context)
-                    .inflate(com.homeostasis.app.R.layout.task_history_item, parent, false)
-                TaskHistoryItemViewHolder(view)
+                    .inflate(R.layout.item_task_history_log, parent, false) // Ensure this XML is correct
+                TaskHistoryLogViewHolder(view)
             }
-            else -> throw IllegalArgumentException("Invalid view type")
+            else -> throw IllegalArgumentException("Invalid view type: $viewType")
         }
     }
 
     override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
-        when (holder.itemViewType) {
-            VIEW_TYPE_USER_SCORE -> {
-                val userScore = dataSet[position] as UserScore
-                val userScoreViewHolder = holder as UserScoreViewHolder
-                userScoreViewHolder.userName.text = userScore.userName
-                userScoreViewHolder.userScore.text = "Score: ${userScore.score}"
+        val item = getItem(position) // Use getItem(position)
+        when (holder) {
+            is UserScoreSummaryViewHolder -> {
+                if (item is UserScoreSummaryItem) holder.bind(item)
             }
-
-            VIEW_TYPE_TASK_HISTORY_ITEM -> {
-                val taskHistoryItem = dataSet[position] as TaskHistory
-                val taskHistoryItemViewHolder = holder as TaskHistoryItemViewHolder
-
-                // Use the defined adapterScope to launch the coroutine
-                adapterScope.launch {
-                    // Switch to a background thread for database operations
-                    val task = withContext(Dispatchers.IO) {
-                        db.taskDao().getTaskById(taskHistoryItem.taskId)
-                    }
-
-                    // Update UI on the main thread
-                    if (task != null) {
-                        taskHistoryItemViewHolder.taskName.text = task.title
-                        taskHistoryItemViewHolder.taskDescription.text = task.description
-                        taskHistoryItemViewHolder.taskCompletedDate.text = taskHistoryItem.completedAt.toString()
-                    } else {
-                        taskHistoryItemViewHolder.taskName.text = "Task not found"
-                        taskHistoryItemViewHolder.taskDescription.text = "Task not found"
-                        taskHistoryItemViewHolder.taskCompletedDate.text = taskHistoryItem.completedAt.toString()
-                    }
-                }
+            is TaskHistoryLogViewHolder -> {
+                if (item is TaskHistoryItem) holder.bind(item)
             }
         }
     }
 
-    override fun getItemCount() = dataSet.size
+    // REMOVE: getItemCount() - ListAdapter handles this
+    // REMOVE: updateData() - Use submitList() from Fragment/ViewModel
+    // REMOVE: historyItems property
 
-    // It's good practice to cancel the scope when the adapter is no longer needed.
-    // However, RecyclerView.Adapter doesn't have a direct lifecycle callback for this.
-    // If this adapter is tied to a Fragment or Activity lifecycle,
-    // you should cancel the scope from there.
-    // For example, in a Fragment's onDestroyView():
-    // fun onDestroyView() {
-    //     super.onDestroyView()
-    //     adapter.cancelScope() // You'd need to add a public method to your adapter
-    // }
-    //
-    // public fun cancelScope() {
-    //     adapterScope.cancel()
-    // }
+    // CoroutineScope: If you need to launch coroutines from the adapter (e.g., for complex calculations
+    // not related to view binding, or click listeners that do async work), you still might keep this.
+    // However, for typical Glide/image loading or simple data binding, it's often not needed directly in onBindViewHolder.
+    // If you do keep it, ensure it's cancelled appropriately (e.g., via a public method called from Fragment's onDestroyView).
+    // For now, let's assume it's not strictly necessary for basic binding.
+    // private val adapterScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    // public fun cancelScope() { adapterScope.cancel() }
 
 
     companion object {
-        private const val VIEW_TYPE_USER_SCORE = 1
-        private const val VIEW_TYPE_TASK_HISTORY_ITEM = 2
+        private const val VIEW_TYPE_USER_SCORE_SUMMARY = 1
+        private const val VIEW_TYPE_TASK_HISTORY_LOG = 2
+    }
+}
+
+// DiffUtil.ItemCallback implementation
+class TaskHistoryFeedItemDiffCallback : DiffUtil.ItemCallback<TaskHistoryFeedItem>() {
+    override fun areItemsTheSame(oldItem: TaskHistoryFeedItem, newItem: TaskHistoryFeedItem): Boolean {
+        // Check if items represent the same logical entity (e.g., by unique ID)
+        return when {
+            oldItem is UserScoreSummaryItem && newItem is UserScoreSummaryItem -> oldItem.userId == newItem.userId
+            oldItem is TaskHistoryItem && newItem is TaskHistoryItem -> oldItem.historyId == newItem.historyId
+            else -> false // Different types are never the same item
+        }
+    }
+
+    override fun areContentsTheSame(oldItem: TaskHistoryFeedItem, newItem: TaskHistoryFeedItem): Boolean {
+        // Check if the content of the items is the same (all fields)
+        // This is called only if areItemsTheSame returns true.
+        return oldItem == newItem // Relies on data classes' generated equals()
     }
 }

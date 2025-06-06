@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
+    xmlns:tools="http://schemas.android.com/tools"
+    package="com.homeostasis.app">
 
+    <uses-permission android:name="android.permission.INTERNET" />
     <application
-        android:name=".HomeostasisApplication"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -12,12 +13,13 @@
         android:roundIcon="@drawable/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Homeostasis"
-        tools:targetApi="31">
+        tools:targetApi="31"
+        android:name="com.homeostasis.app.HomeostasisApplication">
         <activity
-            android:name=".ui.MainActivity"
             android:label="@string/app_name"
             android:theme="@style/Theme.Homeostasis"
-            android:exported="true">
+            android:exported="true"
+            android:name="com.homeostasis.app.ui.MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

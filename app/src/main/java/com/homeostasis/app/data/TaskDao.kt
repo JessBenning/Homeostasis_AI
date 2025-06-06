@@ -56,4 +56,5 @@ interface TaskDao {
     // Optional: If you still need a Flow of all tasks for some other purpose.
     // @Query("SELECT * FROM tasks ORDER BY createdAt DESC")
     // fun getAllTasksFlow(): Flow<List<Task>>
+
 }

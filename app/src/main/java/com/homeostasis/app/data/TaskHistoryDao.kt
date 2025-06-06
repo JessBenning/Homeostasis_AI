@@ -43,4 +43,7 @@ interface TaskHistoryDao {
 
     @Query("SELECT * FROM task_history WHERE needsSync = 1")
     fun getModifiedTaskHistoryRequiringSync(): Flow<List<TaskHistory>>
+
+    @Query("SELECT * FROM task_history ORDER BY completedAt DESC") // Or your actual table name
+    fun getAllTaskHistoryFlow(): Flow<List<TaskHistory>>
 }

@@ -7,6 +7,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.homeostasis.app.data.AppDatabase
 import com.homeostasis.app.data.TaskDao
 import com.homeostasis.app.data.TaskHistoryDao
+import com.homeostasis.app.data.UserDao
 import com.homeostasis.app.data.remote.*
 import dagger.Module
 import dagger.Provides
@@ -45,7 +46,7 @@ object FirebaseModule {
     @Singleton
     fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase {
         return Room.databaseBuilder(
-            context,
+            context.applicationContext,
             AppDatabase::class.java,
             "app_database"
         )
@@ -120,7 +121,15 @@ object FirebaseModule {
     }
 
     @Provides
+    @Singleton
     fun provideTaskHistoryDao(appDatabase: AppDatabase): TaskHistoryDao {
         return appDatabase.taskHistoryDao()
     }
+
+    @Provides
+    @Singleton // If AppDatabase is Singleton
+    fun provideUserDao(appDatabase: AppDatabase): UserDao {
+        return appDatabase.userDao()
+    }
+
 }

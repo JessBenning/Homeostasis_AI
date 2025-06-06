@@ -1,86 +1,111 @@
 package com.homeostasis.app.ui.task_history
 
 import android.os.Bundle
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.viewModels
+
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.homeostasis.app.R
-import com.homeostasis.app.data.AppDatabase
-import com.homeostasis.app.data.model.TaskHistory
-import com.homeostasis.app.data.model.UserScore
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
+import com.homeostasis.app.R // Make sure this R import is correct
+import com.homeostasis.app.databinding.FragmentTaskHistoryBinding // Using View Binding
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import com.google.firebase.Timestamp
 
+@AndroidEntryPoint
 class TaskHistoryFragment : Fragment() {
 
-    private lateinit var recyclerView: RecyclerView
+    // Using View Binding for safer view access
+    private var _binding: FragmentTaskHistoryBinding? = null
+    private val binding get() = _binding!! // This property is only valid between onCreateView and onDestroyView.
+
+    private val viewModel: TaskHistoryViewModel by viewModels()
     private lateinit var taskHistoryAdapter: TaskHistoryAdapter
-    private lateinit var appDatabase: AppDatabase
 
     override fun onCreateView(
-        inflater: LayoutInflater,
-        container: ViewGroup?,
+        inflater: LayoutInflater, container: ViewGroup?,
         savedInstanceState: Bundle?
-    ): View? {
-                val view = inflater.inflate(R.layout.fragment_task_history, container, false)
-                recyclerView = view.findViewById(R.id.task_history_recycler_view)
-                recyclerView.layoutManager = LinearLayoutManager(context)
+    ): View {
+        _binding = FragmentTaskHistoryBinding.inflate(inflater, container, false)
+        return binding.root
+    }
 
-                // Initialize AppDatabase (replace with your actual database initialization)
-                appDatabase = AppDatabase.getDatabase(requireContext())
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
 
-        
-                taskHistoryAdapter = TaskHistoryAdapter(mutableListOf(), appDatabase)
-                recyclerView.adapter = taskHistoryAdapter
-        
-                return view
-            }
-        
-            override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-                super.onViewCreated(view, savedInstanceState)
-        
-                recyclerView.adapter = taskHistoryAdapter
-                super.onViewCreated(view, savedInstanceState)
-        
-                // Load data from database and update the adapter
-                loadTaskHistory()
-            }
-        
-            private fun loadTaskHistory() {
-                CoroutineScope(Dispatchers.Main).launch {
-                    val taskHistory = withContext(Dispatchers.IO) {
-                        appDatabase.taskHistoryDao().getAllTaskHistory()
+        setupRecyclerView()
+        observeViewModel()
+    }
+
+    private fun setupRecyclerView() {
+        taskHistoryAdapter = TaskHistoryAdapter() // Initialize the adapter
+        binding.taskHistoryRecyclerView.apply { // Assuming your RecyclerView's ID is 'taskHistoryRecyclerView'
+            adapter = taskHistoryAdapter
+            layoutManager = LinearLayoutManager(context)
+            // You can also add ItemDecoration here if needed (e.g., for dividers)
+            // addItemDecoration(DividerItemDecoration(context, LinearLayoutManager.VERTICAL))
+        }
+        Log.d("TaskHistoryFragment", "RecyclerView setup complete.")
+    }
+
+    private fun observeViewModel() {
+        // Use viewLifecycleOwner.lifecycleScope for UI-related coroutines
+        // Use repeatOnLifecycle to ensure collection stops when the view is destroyed
+        // and restarts when it's created again.
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.taskHistoryItems.collect { feedItems ->
+                    if (feedItems.isNotEmpty()) {
+                        Log.d("TaskHistoryFragment", "Observed ${feedItems.size} feed items. First item: ${feedItems.firstOrNull()}")
+                        taskHistoryAdapter.submitList(feedItems)
+                        binding.taskHistoryRecyclerView.visibility = View.VISIBLE
+                        binding.emptyViewTaskHistory.visibility = View.GONE // Assuming you have an empty view
+                    } else {
+                        Log.d("TaskHistoryFragment", "Observed empty feed items.")
+                        binding.taskHistoryRecyclerView.visibility = View.GONE
+                        binding.emptyViewTaskHistory.visibility = View.VISIBLE
                     }
-        
-                    val dataSet = mutableListOf<Any>()
-                    // Create dummy data for testing
-//                    dataSet.add(UserScore("1", "John Doe", "https://example.com/john.jpg", 100))
-//                    dataSet.add(TaskHistory("1", "Task 1", "User 1", Timestamp.now(), 10))
-//
-//                    dataSet.add(UserScore("2", "Jane Smith", "https://example.com/jane.jpg", 120))
-//                    dataSet.add(TaskHistory("2", "Task 2", "User 2", Timestamp.now(), 20))
-
-                    dataSet.addAll(getUserScores())
-                    val taskHistoryList = mutableListOf<TaskHistory>()
-                    taskHistory.collect { taskHistoryList.addAll(it) }
-                    dataSet.addAll(taskHistoryList)
-        
-                    taskHistoryAdapter.dataSet.clear()
-                    taskHistoryAdapter.dataSet.addAll(dataSet)
-                    taskHistoryAdapter.notifyDataSetChanged()
                 }
             }
-    private fun getUserScores(): List<UserScore> {
-        // Replace with actual logic to fetch user scores
-        return listOf(
-            UserScore("1", "John Doe", "https://example.com/john.jpg", 100),
-            UserScore("2", "Jane Smith", "https://example.com/jane.jpg", 120)
-        )
+        }
+
+
+
+        // Observe loading state
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.isLoading.collect { isLoadingValue: Boolean -> // Explicit type
+                    binding.progressBarTaskHistory.visibility = if (isLoadingValue) View.VISIBLE else View.GONE
+                    Log.d("TaskHistoryFragment", "isLoading state: $isLoadingValue")
+                }
+            }
+        }
+
+        // Observe error messages
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.error.collect { errorMessage: String? -> // Explicit type
+                    if (errorMessage != null) {
+                        Log.e("TaskHistoryFragment", "Error: $errorMessage")
+                        com.google.android.material.snackbar.Snackbar.make(binding.root, errorMessage, com.google.android.material.snackbar.Snackbar.LENGTH_LONG).show()
+                        viewModel.clearError() // Add this method in ViewModel
+                    }
+                }
+            }
+        }
+    }
+
+    override fun onDestroyView() {
+        super.onDestroyView()
+        binding.taskHistoryRecyclerView.adapter = null // Important to clear adapter to avoid memory leaks with RecyclerView
+        _binding = null // Clear the binding reference
+        Log.d("TaskHistoryFragment", "View destroyed, binding cleared.")
     }
 }
+
