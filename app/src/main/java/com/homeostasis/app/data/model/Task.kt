@@ -44,7 +44,8 @@ data class Task(
 
     @PropertyName("isCompleted") // Good practice for Firestore
     val isCompleted: Boolean = false,
-
+    @PropertyName("householdGroupId")
+    val householdGroupId: String = "",
 ) {
     // Empty constructor for Firestore
     constructor() : this(
@@ -55,9 +56,10 @@ data class Task(
         categoryId = "",
         createdBy = "",
         isDeleted = false,
-        needsSync = false,
         createdAt = Timestamp.now(),
         lastModifiedAt = Timestamp.now(),
+        needsSync = false,
+        householdGroupId = ""
     )
 
     companion object {

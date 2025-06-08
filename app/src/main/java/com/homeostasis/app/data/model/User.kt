@@ -28,9 +28,12 @@ data class User(
     
     @PropertyName("lastResetScore")
     val lastResetScore: Int = 0,
-    
+
     @PropertyName("resetCount")
-    val resetCount: Int = 0
+    val resetCount: Int = 0,
+    
+    @PropertyName("householdGroupId")
+    val householdGroupId: String = ""
 ) {
     // Empty constructor for Firestore
     constructor() : this(
@@ -40,7 +43,8 @@ data class User(
         createdAt = Timestamp.now(),
         lastActive = Timestamp.now(),
         lastResetScore = 0,
-        resetCount = 0
+        resetCount = 0,
+        householdGroupId = ""
     )
     
     companion object {

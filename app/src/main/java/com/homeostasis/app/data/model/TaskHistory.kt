@@ -43,25 +43,29 @@ data class TaskHistory(
     @PropertyName("lastModifiedAt")
     val lastModifiedAt: Timestamp = Timestamp.now(),
 
-    val needsSync: Boolean = false,
-
-    ) {
-    // Empty constructor for Firestore
-    constructor() : this(
-        id = "",
-        taskId = "",
-        userId = "",
-        completedAt = Timestamp.now(),
-        pointValue = 0,
-        customCompletionDate = Timestamp.now(),
-        isDeleted = false,
-        isArchived = false,
-        archivedInResetId = null,
-        needsSync = false,
-        lastModifiedAt = Timestamp.now()
-    )
     
-    companion object {
-        const val COLLECTION = "taskHistory"
+        val needsSync: Boolean = false,
+        
+        @PropertyName("householdGroupId")
+        val householdGroupId: String = ""
+        ) {
+        // Empty constructor for Firestore
+        constructor() : this(
+            id = "",
+            taskId = "",
+            userId = "",
+            completedAt = Timestamp.now(),
+            pointValue = 0,
+            customCompletionDate = Timestamp.now(),
+            isDeleted = false,
+            isArchived = false,
+            archivedInResetId = null,
+            needsSync = false,
+            lastModifiedAt = Timestamp.now(),
+            householdGroupId = ""
+        )
+        
+        companion object {
+            const val COLLECTION = "taskHistory"
+        }
     }
-}

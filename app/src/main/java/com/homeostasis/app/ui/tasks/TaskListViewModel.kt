@@ -14,12 +14,17 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 import com.homeostasis.app.data.remote.TaskRepository
 import kotlinx.coroutines.flow.distinctUntilChanged
+import com.homeostasis.app.data.HouseholdGroupIdProvider // Import HouseholdGroupIdProvider
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest // Import flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 
 @HiltViewModel
 class TaskListViewModel @Inject constructor(
     private val taskRepository: TaskRepository, // Inject TaskRepository
     private val taskHistoryDao: TaskHistoryDao,
-    private val taskDao: TaskDao
+    private val taskDao: TaskDao,
+    private val householdGroupIdProvider: HouseholdGroupIdProvider // Inject HouseholdGroupIdProvider
 ) : ViewModel() {
 
     private val _tasks = MutableStateFlow<List<Task>>(emptyList())
@@ -50,7 +55,12 @@ class TaskListViewModel @Inject constructor(
         viewModelScope.launch {
             // Observe tasks from the DAO that are NOT soft-deleted
             // The DAO's getActiveTasks() method should have the "WHERE isDeleted = 0" clause
-            taskDao.getActiveVisibleTasks()
+            householdGroupIdProvider.getHouseholdGroupId() // Get the Flow of householdGroupId
+                .flatMapLatest { householdGroupId -> // Use flatMapLatest to switch to a new flow whenever householdGroupId changes
+                    householdGroupId?.let {
+                        taskDao.getActiveVisibleTasks(it) // Pass the householdGroupId to the DAO
+                    } ?: flowOf(emptyList()) // Emit an empty list if householdGroupId is null
+                }
                 .distinctUntilChanged() // Only emit when the list content actually changes
                 .collect { activeTasksFromDb ->
                     _tasks.value = activeTasksFromDb
@@ -66,7 +76,8 @@ class TaskListViewModel @Inject constructor(
                 isDeleted = false, // Ensure it's not marked deleted if it's new
                 lastModifiedAt = Timestamp.now(),
                 needsSync = true, // Mark for synchronization
-                isDeletedLocally = false
+                isDeletedLocally = false,
+                householdGroupId = householdGroupIdProvider.getHouseholdGroupId().first() ?: HouseholdGroupIdProvider.DEFAULT_HOUSEHOLD_GROUP_ID // Use the constant
             )
             taskDao.upsertTask(taskToInsertLocally) // Or your equivalent DAO method
             // FirebaseSyncManager will handle calling taskRepository.createOrUpdateTaskInFirestore later
@@ -78,7 +89,8 @@ class TaskListViewModel @Inject constructor(
         viewModelScope.launch {
             val taskToUpdateLocally = task.copy(
                 lastModifiedAt = Timestamp.now(),
-                needsSync = true
+                needsSync = true,
+                householdGroupId = householdGroupIdProvider.getHouseholdGroupId().first() ?: HouseholdGroupIdProvider.DEFAULT_HOUSEHOLD_GROUP_ID // Use the constant
             )
             taskDao.upsertTask(taskToUpdateLocally) // Or your equivalent DAO method for updates
             // FirebaseSyncManager will handle calling taskRepository.createOrUpdateTaskInFirestore later
@@ -97,7 +109,8 @@ class TaskListViewModel @Inject constructor(
                 val taskToMarkAsDeleted = task.copy(
                     isDeletedLocally = true, // Mark that it's deleted from the user's perspective locally
                     needsSync = true,        // Indicate that this deletion needs to be synced to Firestore
-                    lastModifiedAt = Timestamp.now()
+                    lastModifiedAt = Timestamp.now(),
+                    householdGroupId = householdGroupIdProvider.getHouseholdGroupId().first() ?: HouseholdGroupIdProvider.DEFAULT_HOUSEHOLD_GROUP_ID // Use the constant
                 )
                 taskDao.upsertTask(taskToMarkAsDeleted) // Update the task in Room
 
@@ -133,11 +146,12 @@ class TaskListViewModel @Inject constructor(
                 isArchived = false,
                 archivedInResetId = null,
                 needsSync = true,
-                lastModifiedAt = Timestamp.now()
+                lastModifiedAt = Timestamp.now(),
+                householdGroupId = householdGroupIdProvider.getHouseholdGroupId().first() ?: HouseholdGroupIdProvider.DEFAULT_HOUSEHOLD_GROUP_ID // Use the constant
             )
             Log.d(TAG, "Attempting to insert TaskHistory into Room: $taskHistory") // Log BEFORE insert
             try {
-                taskHistoryDao.insert(taskHistory)
+                taskHistoryDao.insertOrUpdate(taskHistory)
                 Log.d(TAG, "SUCCESS: TaskHistory entry inserted into Room. ID: ${taskHistory.id}") // Log AFTER successful insert
             } catch (e: Exception) {
                 Log.e(TAG, "ERROR inserting TaskHistory into Room: ${e.message}", e) // Log any error

@@ -3,6 +3,7 @@ package com.homeostasis.app.ui.task_history
 import android.util.Log // For logging
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.firebase.Timestamp
 import com.homeostasis.app.data.TaskDao
 import com.homeostasis.app.data.TaskHistoryDao
 import com.homeostasis.app.data.UserDao
@@ -15,12 +16,15 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.onStart
+import com.homeostasis.app.data.HouseholdGroupIdProvider // Import HouseholdGroupIdProvider
+import kotlinx.coroutines.flow.first // Import first
 
 @HiltViewModel
 class TaskHistoryViewModel @Inject constructor(
     private val taskHistoryDao: TaskHistoryDao,
     private val taskDao: TaskDao,
-    private val userDao: UserDao
+    private val userDao: UserDao,
+    private val householdGroupIdProvider: HouseholdGroupIdProvider // Inject HouseholdGroupIdProvider
     // ... any other dependencies
 ) : ViewModel() {
 
@@ -46,46 +50,51 @@ class TaskHistoryViewModel @Inject constructor(
     private fun loadCombinedFeed() {
         Log.d("TaskHistoryVM", "loadCombinedFeed() called")
         viewModelScope.launch {
-            taskHistoryDao.getAllTaskHistoryFlow() // Emits List<TaskHistory> (raw data)
-                .onStart {
-                    _isLoading.value = true
-                    _error.value = null
-                    _feedItems.value = emptyList() // Clear previous items
-                    Log.d("TaskHistoryVM", "Flow.onStart: Loading started.")
-                }
-                .map { rawHistoryList -> // rawHistoryList is List<TaskHistory>
-                    Log.i("TaskHistoryVM", "Map 1: Received ${rawHistoryList.size} raw history entries.")
+            householdGroupIdProvider.getHouseholdGroupId() // Get the Flow of householdGroupId
+                .flatMapLatest { householdGroupId -> // Use flatMapLatest to switch to a new flow whenever householdGroupId changes
+                    householdGroupId?.let { id ->
+                        taskHistoryDao.getAllTaskHistoryFlow(id) // Pass the householdGroupId to the DAO
+                            .onStart {
+                                _isLoading.value = true
+                                _error.value = null
+                                _feedItems.value = emptyList() // Clear previous items
+                                Log.d("TaskHistoryVM", "Flow.onStart: Loading started.")
+                            }
+                            .map { rawHistoryList -> // rawHistoryList is List<TaskHistory>
+                                Log.i("TaskHistoryVM", "Map 1: Received ${rawHistoryList.size} raw history entries.")
 
-                    // Step 1: Calculate User Scores and transform them into UserScoreSummaryItem
-                    val userScoreSummaryItems = calculateAndFormatUserScores(rawHistoryList, userDao)
-                    Log.d("TaskHistoryVM", "Calculated ${userScoreSummaryItems.size} UserScoreSummaryItems.")
+                                // Step 1: Calculate User Scores and transform them into UserScoreSummaryItem
+                                val userScoreSummaryItems = calculateAndFormatUserScores(rawHistoryList, userDao, id) // Pass householdGroupId
+                                Log.d("TaskHistoryVM", "Calculated ${userScoreSummaryItems.size} UserScoreSummaryItems.")
 
-                    // Step 2: Transform raw history entries into TaskHistoryItem (log items)
-                    val taskHistoryLogItems = rawHistoryList.map { history ->
-                        val user = userDao.getUserById(history.userId) // Suspend
-                        val task = taskDao.getTaskById(history.taskId) // Suspend
-                        TaskHistoryFeedItem.TaskHistoryItem(
-                            historyId = history.id,
-                            taskTitle = task?.title ?: "Unknown Task",
-                            points = history.pointValue,
-                            completedByUserName = user?.name ?: "Unknown User",
-                            completedAt = history.completedAt,
-                            completedByUserProfilePicUrl = user?.profileImageUrl ?: ""
-                        )
-                    }.sortedByDescending { it.completedAt } // Sort log items by completion time
+                                // Step 2: Transform raw history entries into TaskHistoryItem (log items)
+                                val taskHistoryLogItems = rawHistoryList.map { history ->
+                                    val user = userDao.getUserById(history.userId, id) // Suspend, Pass householdGroupId
+                                    val task = taskDao.getTaskById(history.taskId, id) // Suspend, Pass householdGroupId
+                                    TaskHistoryFeedItem.TaskHistoryItem(
+                                        historyId = history.id,
+                                        taskTitle = task?.title ?: "Unknown Task",
+                                        points = history.pointValue,
+                                        completedByUserName = user?.name ?: "Unknown User",
+                                        completedAt = history.completedAt,
+                                        completedByUserProfilePicUrl = user?.profileImageUrl ?: ""
+                                    )
+                                }.sortedByDescending { it.completedAt } // Sort log items by completion time
 
-                    Log.d("TaskHistoryVM", "Mapped to ${taskHistoryLogItems.size} TaskHistoryLogItems.")
+                                Log.d("TaskHistoryVM", "Mapped to ${taskHistoryLogItems.size} TaskHistoryLogItems.")
 
-                    // Step 3: Combine them. User scores usually go on top.
-                    val combinedList: List<TaskHistoryFeedItem> = userScoreSummaryItems + taskHistoryLogItems
-                    Log.d("TaskHistoryVM", "Combined list has ${combinedList.size} items.")
-                    combinedList
-                }
-                .catch { exception ->
-                    Log.e("TaskHistoryVM", "CATCH (Flow): Error in Flow chain", exception)
-                    _error.value = "Failed to load feed: ${exception.message}"
-                    _feedItems.value = emptyList() // Clear items on error
-                    _isLoading.value = false
+                                // Step 3: Combine them. User scores usually go on top.
+                                val combinedList: List<TaskHistoryFeedItem> = userScoreSummaryItems + taskHistoryLogItems
+                                Log.d("TaskHistoryVM", "Combined list has ${combinedList.size} items.")
+                                combinedList
+                            }
+                            .catch { exception ->
+                                Log.e("TaskHistoryVM", "CATCH (Flow): Error in Flow chain", exception)
+                                _error.value = "Failed to load feed: ${exception.message}"
+                                _feedItems.value = emptyList() // Clear items on error
+                                _isLoading.value = false
+                            }
+                    } ?: flowOf(emptyList()) // Emit empty list if householdGroupId is null
                 }
                 .collect { combinedFeedList ->
                     Log.i("TaskHistoryVM", "COLLECT: Collected ${combinedFeedList.size} combined feed items.")
@@ -102,8 +111,10 @@ class TaskHistoryViewModel @Inject constructor(
     // Helper function to calculate scores and transform them to UserScoreSummaryItem
     private suspend fun calculateAndFormatUserScores(
         historyItems: List<TaskHistory>,
-        userDao: UserDao
+        userDao: UserDao,
+        householdGroupId: String // Accept householdGroupId as a parameter
     ): List<TaskHistoryFeedItem.UserScoreSummaryItem> {
+
         if (historyItems.isEmpty()) {
             Log.d("TaskHistoryVM", "calculateAndFormatUserScores: No history items.")
             return emptyList()
@@ -123,7 +134,7 @@ class TaskHistoryViewModel @Inject constructor(
 
         val scoreSummaryList = mutableListOf<TaskHistoryFeedItem.UserScoreSummaryItem>()
         for ((userId, points) in userPoints) {
-            val user = userDao.getUserById(userId) // Suspend function
+            val user = userDao.getUserById(userId, householdGroupId) // Suspend function, Use householdGroupId
             scoreSummaryList.add(
                 TaskHistoryFeedItem.UserScoreSummaryItem(
                     userId = userId,

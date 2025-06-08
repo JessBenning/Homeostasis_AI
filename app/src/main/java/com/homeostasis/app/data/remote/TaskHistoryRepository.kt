@@ -32,7 +32,7 @@ class TaskHistoryRepository(private val context: android.content.Context) : Fire
         val TAG_REPO_RECORD = "TaskHistoryRepo_Record"
         return try {
             val newHistory = TaskHistory(
-                id = taskHistoryId, // Use pre-generated ID
+               // id = taskHistoryId, // Use pre-generated ID
                 taskId = taskId,
                 userId = userId,
                 completedAt = Timestamp.now(),
@@ -45,8 +45,9 @@ class TaskHistoryRepository(private val context: android.content.Context) : Fire
                 // needsSync = true // <<<< ADD THIS if you adopt a 'needsSync' flag model
             )
 
+
             val localTaskHistoryDao = AppDatabase.getDatabase(this.context).taskHistoryDao() // Use class context
-            localTaskHistoryDao.insert(newHistory) // Still write locally first
+            localTaskHistoryDao.insertOrUpdate(newHistory) // Still write locally first
             Log.d(TAG_REPO_RECORD, "TaskHistory ${newHistory.id} inserted into local Room DB.")
 
             // Now attempt to write to Firestore as well

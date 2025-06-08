@@ -12,6 +12,7 @@ import com.homeostasis.app.data.remote.TaskRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+// import kotlinx.coroutines.launch // kotlinx.coroutines.flow.launchIn can be an alternative for some scenarios
 import javax.inject.Inject
 import javax.inject.Singleton
 import android.content.Context // Keep if context is used for something else
@@ -24,6 +25,7 @@ class FirebaseSyncManager @Inject constructor(
     private val firestore: FirebaseFirestore,
     private val taskRepository: TaskRepository,
     private val taskHistoryRepository: TaskHistoryRepository,
+    private val householdGroupIdProvider: HouseholdGroupIdProvider,
     @ApplicationContext private val context: Context // Keep if needed
 ) {
 
@@ -43,12 +45,20 @@ class FirebaseSyncManager @Inject constructor(
         Log.i(TAG, "FirebaseSyncManager Initializing...")
 
         // --- Task Synchronization ---
-        setupRemoteTaskListenerAndInitialFetch()
-        setupLocalTaskObserverAndInitialPush()
+        syncScope.launch {
+            setupRemoteTaskListenerAndInitialFetch()
+        }
+        syncScope.launch {
+            setupLocalTaskObserverAndInitialPush()
+        }
 
         // --- TaskHistory Synchronization ---
-        setupRemoteTaskHistoryListenerAndInitialFetch()
-        setupLocalTaskHistoryObserverAndInitialPush()
+        syncScope.launch {
+            setupRemoteTaskHistoryListenerAndInitialFetch()
+        }
+        syncScope.launch {
+            setupLocalTaskHistoryObserverAndInitialPush()
+        }
 
 
         syncScope.launch {
@@ -72,224 +82,114 @@ class FirebaseSyncManager @Inject constructor(
     }
 
     // --- TASKS: Remote (Firestore) -> Local (Room) ---
-    private fun setupRemoteTaskListenerAndInitialFetch() {
+    private suspend fun setupRemoteTaskListenerAndInitialFetch() { // Marked suspend
         Log.d(TAG, "Setting up Remote Task Listener & Initial Fetch.")
-        setupFirestoreListenerAndInitialFetch(
-            collectionPath = Task.COLLECTION,
-            modelClass = Task::class.java,
-            entityName = "Task",
-            localUpsertOrDelete = { changeType, task ->
-                processRemoteTaskChange(changeType, task)
+        householdGroupIdProvider.getHouseholdGroupId().collect { householdGroupId -> // collect is a suspend function
+            householdGroupId?.let {
+                // Assuming setupFirestoreListenerAndInitialFetch is NOT a suspend fun itself,
+                // but its lambdas might call suspend funs or it might be a flow collector.
+                // If it internally collects flows, it should also be suspend.
+                setupFirestoreListenerAndInitialFetch(
+                    collectionPath = Task.COLLECTION,
+                    modelClass = Task::class.java,
+                    entityName = "Task",
+                    localUpsertOrDelete = { changeType, task ->
+                        // processRemoteTaskChange is suspend, so this lambda must be called from a coroutine
+                        // This implies setupFirestoreListenerAndInitialFetch should handle launching a coroutine
+                        // for this lambda or be a suspend function itself. For now, assuming it handles it.
+                        processRemoteTaskChange(changeType, task, householdGroupId)
+                    }
+                )
             }
-        )
+        }
     }
 
     // --- TASKS: Local (Room) -> Remote (Firestore) ---
-    private fun setupLocalTaskObserverAndInitialPush() {
+    private suspend fun setupLocalTaskObserverAndInitialPush() { // Marked suspend
         Log.d(TAG, "Setting up Local Task Observer & Initial Push.")
-        // Combine flows for tasks needing sync and tasks needing local deletion sync
-        // Ensure your DAO methods return Flow<List<Task>>
-        val modifiedTasksFlow = db.taskDao().getModifiedTasksRequiringSync()
-        val deletedLocallyTasksFlow = db.taskDao().getLocallyDeletedTasksRequiringSync()
-
-        // It's often cleaner to handle distinct logical operations (create/update vs delete)
-        // in separate observers or by checking the state within the pushToFirestore lambda.
-        // For this example, we'll assume pushTaskToFirestore handles the isDeletedLocally flag.
-
-        val combinedTasksNeedingSyncFlow = combine(modifiedTasksFlow, deletedLocallyTasksFlow) { modified, deleted ->
-            // This simple combination might send duplicates if a task is both modified and marked deleted.
-            // A more robust approach might be to ensure your DAO flows are distinct or filter here.
-            // For now, let's assume `pushTaskToFirestore` and `updateLocalTaskAfterPush` can handle it.
-            (modified + deleted).distinctBy { it.id } // Ensure uniqueness by ID
+        // flatMapLatest and combine are flow operators, the final collect will be in setupLocalEntityObserverAndInitialPush
+        val modifiedTasksFlow = householdGroupIdProvider.getHouseholdGroupId().flatMapLatest { householdGroupId ->
+            householdGroupId?.let {
+                db.taskDao().getModifiedTasksRequiringSync(it)
+            } ?: flowOf(emptyList())
+        }
+        val deletedLocallyTasksFlow = householdGroupIdProvider.getHouseholdGroupId().flatMapLatest { householdGroupId ->
+            householdGroupId?.let {
+                db.taskDao().getLocallyDeletedTasksRequiringSync(it)
+            } ?: flowOf(emptyList())
         }
 
+        val combinedTasksNeedingSyncFlow = combine(modifiedTasksFlow, deletedLocallyTasksFlow) { modified, deleted ->
+            (modified + deleted).distinctBy { it.id }
+        }
 
+        // If setupLocalEntityObserverAndInitialPush internally collects localChangesFlow,
+        // then it MUST be a suspend function.
+        // The lambda for getAllLocalNeedingSyncSnapshot calls .first() which IS a suspend function.
+        // So, setupLocalEntityObserverAndInitialPush MUST handle invoking this lambda from a coroutine
+        // or be a suspend function itself.
         setupLocalEntityObserverAndInitialPush(
             entityName = "Task",
             localChangesFlow = combinedTasksNeedingSyncFlow,
-            pushItemToFirestore = { task -> pushTaskToFirestore(task) },
-            updateLocalAfterPush = { task, success -> updateLocalTaskAfterPush(task, success) },
-            getAllLocalNeedingSyncSnapshot = {
-                // Fetch both types and combine, ensuring uniqueness
-                val modified = db.taskDao().getAllTasksFromRoomSnapshot().filter { it.needsSync && !it.isDeletedLocally }
-                val deleted = db.taskDao().getAllTasksFromRoomSnapshot().filter { it.isDeletedLocally } // needsSync is implied for these
-                (modified + deleted).distinctBy { it.id }
+            pushItemToFirestore = { task -> pushTaskToFirestore(task) }, // pushTaskToFirestore is suspend
+            updateLocalAfterPush = { task, success -> updateLocalTaskAfterPush(task, success) }, // updateLocalTaskAfterPush is suspend
+            getAllLocalNeedingSyncSnapshot = { // This lambda calls .first() which is suspend
+                // This lambda will be called by setupLocalEntityObserverAndInitialPush.
+                // It needs to be called from a coroutine scope.
+                runBlocking { // Or ensure setupLocalEntityObserverAndInitialPush calls this from a coroutine
+                    householdGroupIdProvider.getHouseholdGroupId().first()?.let { householdGroupId ->
+                        val modified = db.taskDao().getAllTasksFromRoomSnapshot(householdGroupId).filter { it.needsSync && !it.isDeletedLocally }
+                        val deleted = db.taskDao().getAllTasksFromRoomSnapshot(householdGroupId).filter { it.isDeletedLocally }
+                        (modified + deleted).distinctBy { it.id }
+                    } ?: emptyList()
+                }
             }
         )
     }
 
 
     // --- TASK HISTORY: Remote (Firestore) -> Local (Room) ---
-    private fun setupRemoteTaskHistoryListenerAndInitialFetch() {
+    private suspend fun setupRemoteTaskHistoryListenerAndInitialFetch() { // Marked suspend
         Log.d(TAG, "Setting up Remote TaskHistory Listener & Initial Fetch.")
-        setupFirestoreListenerAndInitialFetch(
-            collectionPath = TaskHistory.COLLECTION, // Make sure TaskHistory.COLLECTION exists
-            modelClass = TaskHistory::class.java,
-            entityName = "TaskHistory",
-            localUpsertOrDelete = { changeType, history ->
-                processRemoteTaskHistoryChange(changeType, history)
+        householdGroupIdProvider.getHouseholdGroupId().collect { householdGroupId -> // collect is suspend
+            householdGroupId?.let {
+                // See comments for setupRemoteTaskListenerAndInitialFetch regarding setupFirestoreListenerAndInitialFetch
+                setupFirestoreListenerAndInitialFetch(
+                    collectionPath = TaskHistory.COLLECTION,
+                    modelClass = TaskHistory::class.java,
+                    entityName = "TaskHistory",
+                    localUpsertOrDelete = { changeType, history ->
+                        // processRemoteTaskHistoryChange is suspend
+                        processRemoteTaskHistoryChange(changeType, history, householdGroupId)
+                    }
+                )
             }
-        )
+        }
     }
 
     // --- TASK HISTORY: Local (Room) -> Remote (Firestore) ---
-    private fun setupLocalTaskHistoryObserverAndInitialPush() {
+    private suspend fun setupLocalTaskHistoryObserverAndInitialPush() { // Marked suspend
         Log.d(TAG, "Setting up Local TaskHistory Observer & Initial Push.")
-        // Assuming TaskHistory also has needsSync and potentially isDeletedLocally fields.
-        // And DAO methods: getModifiedHistoryRequiringSync(): Flow<List<TaskHistory>>,
-        // getLocallyDeletedHistoryRequiringSync(): Flow<List<TaskHistory>>,
-        // getAllHistorySnapshot(): List<TaskHistory>
+        val modifiedHistoryFlow = householdGroupIdProvider.getHouseholdGroupId().flatMapLatest { householdGroupId ->
+            householdGroupId?.let {
+                db.taskHistoryDao().getModifiedTaskHistoryRequiringSync(it)
+            } ?: flowOf(emptyList())
+        }
 
-        // Placeholder: Replace with actual DAO methods for TaskHistory
-        val modifiedHistoryFlow = db.taskHistoryDao().getModifiedTaskHistoryRequiringSync() // Create this if needed
-        // val deletedLocallyHistoryFlow = db.taskHistoryDao().getLocallyDeletedTaskHistoryRequiringSync() // Create if needed
-
+        // See comments for setupLocalTaskObserverAndInitialPush regarding setupLocalEntityObserverAndInitialPush
         setupLocalEntityObserverAndInitialPush(
             entityName = "TaskHistory",
-            localChangesFlow = modifiedHistoryFlow, // Modify if you have deletedLocally for history
-            pushItemToFirestore = { history -> pushTaskHistoryToFirestore(history) },
-            updateLocalAfterPush = { history, success -> updateLocalTaskHistoryAfterPush(history, success) },
-            getAllLocalNeedingSyncSnapshot = {
-                db.taskHistoryDao().getAllTaskHistoryBlocking().filter { it.needsSync /* || it.isDeletedLocally */ } // Adjust if isDeletedLocally applies
+            localChangesFlow = modifiedHistoryFlow,
+            pushItemToFirestore = { history -> pushTaskHistoryToFirestore(history) }, // pushTaskHistoryToFirestore is suspend
+            updateLocalAfterPush = { history, success -> updateLocalTaskHistoryAfterPush(history, success) }, // updateLocalTaskHistoryAfterPush is suspend
+            getAllLocalNeedingSyncSnapshot =  { // This lambda calls .first() which is suspend
+                runBlocking { // Or ensure setupLocalEntityObserverAndInitialPush calls this from a coroutine
+                    householdGroupIdProvider.getHouseholdGroupId().first()?.let { householdGroupId ->
+                        db.taskHistoryDao().getAllTaskHistoryBlocking(householdGroupId).filter { it.needsSync }
+                    } ?: emptyList()
+                }
             }
         )
-    }
-
-
-    // === GENERIC REUSABLE CORE FUNCTIONS ===
-
-    private fun <T : Any> setupFirestoreListenerAndInitialFetch(
-        collectionPath: String,
-        modelClass: Class<T>,
-        entityName: String,
-        localUpsertOrDelete: suspend (changeType: DocumentChange.Type, item: T) -> Unit
-    ) {
-        syncScope.launch {
-            val initialSyncCompleter = CompletableDeferred<Unit>()
-            var initialSnapshotHandled = false
-            val specificTag = "$TAG_REMOTE_TO_LOCAL-$entityName"
-
-            Log.d(specificTag, "Attaching Firestore listener to collection: $collectionPath")
-
-            val listener = firestore.collection(collectionPath)
-                .addSnapshotListener { snapshots, error ->
-                    if (error != null) {
-                        Log.e(specificTag, "Listen failed for $entityName collection.", error)
-                        if (!initialSnapshotHandled) initialSyncCompleter.completeExceptionally(error)
-                        return@addSnapshotListener
-                    }
-
-                    if (snapshots == null) {
-                        Log.w(specificTag, "$entityName snapshot was null.")
-                        if (!initialSnapshotHandled) initialSyncCompleter.complete(Unit) // Complete to not block indefinitely
-                        return@addSnapshotListener
-                    }
-
-                    if (snapshots.isEmpty && !initialSnapshotHandled) {
-                        Log.d(specificTag, "Initial $entityName snapshot was empty.")
-                    } else if (snapshots.documentChanges.isEmpty() && !snapshots.isEmpty && !initialSnapshotHandled) {
-                        // This case means the snapshot has documents, but no changes *in this specific snapshot*
-                        // (e.g., initial fetch with existing data but no 'changes' yet).
-                        Log.d(specificTag, "Initial $entityName snapshot received with ${snapshots.size()} documents, but no immediate changes in this snapshot delivery.")
-                    } else {
-                        Log.d(specificTag, "Received ${snapshots.documentChanges.size} $entityName document changes from Firestore.")
-                    }
-
-
-                    // Launch a new coroutine for processing to not block the listener
-                    // Especially important if localUpsertOrDelete involves complex logic or further DB ops
-                    this.launch { // Use this.launch to inherit from syncScope if desired, or a specific sub-scope
-                        for (dc in snapshots.documentChanges) {
-                            try {
-                                val item = dc.document.toObject(modelClass)
-                                if (item == null) {
-                                    Log.e(specificTag, "Deserialized $entityName from Firestore is null: ${dc.document.id}")
-                                    continue
-                                }
-                                Log.v(specificTag, "Processing remote change: Type=${dc.type}, ID=${dc.document.id}")
-                                localUpsertOrDelete(dc.type, item)
-                            } catch (deserializationError: Exception) {
-                                Log.e(specificTag, "Error deserializing $entityName from Firestore: ${dc.document.id}", deserializationError)
-                            } catch (processingError: Exception) {
-                                Log.e(specificTag, "Error processing $entityName remote change for ID ${dc.document.id}", processingError)
-                            }
-                        }
-                        if (!initialSnapshotHandled) {
-                            Log.d(specificTag, "Initial Firestore snapshot for $entityName processed.")
-                            initialSyncCompleter.complete(Unit)
-                            initialSnapshotHandled = true
-                        }
-                    }
-                    if (snapshots.documentChanges.isEmpty() && !initialSnapshotHandled) {
-                        // If there were no document changes (e.g. empty collection or first fetch with no diffs)
-                        // still mark initial sync as complete.
-                        Log.d(specificTag, "Initial Firestore snapshot for $entityName had no document changes, completing.")
-                        initialSyncCompleter.complete(Unit)
-                        initialSnapshotHandled = true
-                    }
-                }
-            firestoreListeners.add(listener) // Add to list for cleanup
-
-            // Wait for the initial snapshot to be processed or timeout
-            // This is primarily for the *initial* local-to-remote pass to ensure it runs after remote data is fetched.
-            // Subsequent remote changes are handled by the listener as they come.
-            try {
-                withTimeout(INITIAL_SYNC_TIMEOUT_MS) {
-                    Log.d(specificTag, "Waiting for initial $entityName Firestore snapshot...")
-                    initialSyncCompleter.await()
-                    Log.d(specificTag, "Initial $entityName Firestore snapshot received/processed.")
-                }
-            } catch (timeout: TimeoutCancellationException) {
-                Log.w(specificTag, "Timeout waiting for initial $entityName Firestore snapshot. Reconciliation might be based on stale local data if Firestore was offline.")
-            } catch (e: Exception) {
-                Log.e(specificTag, "Error waiting for initial $entityName Firestore snapshot.", e)
-            }
-        }
-    }
-
-
-    private fun <T : Any> setupLocalEntityObserverAndInitialPush(
-        entityName: String,
-        localChangesFlow: Flow<List<T>>,
-        pushItemToFirestore: suspend (item: T) -> Boolean,
-        updateLocalAfterPush: suspend (item: T, success: Boolean) -> Unit,
-        getAllLocalNeedingSyncSnapshot: suspend () -> List<T>
-    ) {
-        val specificTag = "$TAG_LOCAL_TO_REMOTE-$entityName"
-
-        syncScope.launch {
-            // --- Initial Push ---
-            Log.d(specificTag, "Performing initial local-to-remote sync pass for $entityName.")
-            val itemsForInitialPush = getAllLocalNeedingSyncSnapshot()
-            if (itemsForInitialPush.isNotEmpty()) {
-                Log.i(specificTag, "Found ${itemsForInitialPush.size} $entityName item(s) for initial push.")
-                for (item in itemsForInitialPush) {
-                    Log.d(specificTag, "Initial push attempt for $entityName ID: (extract ID if possible)") // TODO: Extract ID
-                    val success = pushItemToFirestore(item)
-                    updateLocalAfterPush(item, success)
-                }
-            } else {
-                Log.d(specificTag, "No $entityName items found needing initial push.")
-            }
-            Log.d(specificTag, "Finished initial local-to-remote sync pass for $entityName.")
-
-            // --- Ongoing Observation ---
-            Log.d(specificTag, "Starting observer for local $entityName changes requiring sync.")
-            localChangesFlow
-                .distinctUntilChanged() // Only emit when the list content actually changes
-                .collect { itemsToPush ->
-                    if (itemsToPush.isNotEmpty()) {
-                        Log.i(specificTag, "Detected ${itemsToPush.size} local $entityName(s) needing push to Firestore via observer.")
-                        for (item in itemsToPush) {
-                            Log.d(specificTag, "Observer push attempt for $entityName ID: (extract ID if possible)") // TODO: Extract ID
-                            val success = pushItemToFirestore(item)
-                            updateLocalAfterPush(item, success)
-                        }
-                    } else {
-                        Log.v(specificTag, "Local $entityName observer received empty list or no changes requiring push.")
-                    }
-                }
-        }
     }
 
 
@@ -297,48 +197,42 @@ class FirebaseSyncManager @Inject constructor(
 
     // --- Task Specific Helpers ---
 
-    private suspend fun processRemoteTaskChange(changeType: DocumentChange.Type, remoteTaskSource: Task) {
+    private suspend fun processRemoteTaskChange(changeType: DocumentChange.Type, remoteTaskSource: Task, householdGroupId: String) {
         val specificTag = "$TAG_REMOTE_TO_LOCAL-Task"
-        // Ensure local flags are reset for data coming from remote, unless merging with local changes.
-        // The conflict resolution logic from your original syncTasks is crucial here.
-
-        val existingLocalTask = db.taskDao().getTaskById(remoteTaskSource.id)
-        val taskFromRemoteClean = remoteTaskSource.copy(needsSync = false, isDeletedLocally = false) // Base clean version
+        val existingLocalTask = db.taskDao().getTaskById(remoteTaskSource.id, householdGroupId)
+        val taskFromRemoteClean = remoteTaskSource.copy(needsSync = false, isDeletedLocally = false)
 
 
         when (changeType) {
             DocumentChange.Type.ADDED, DocumentChange.Type.MODIFIED -> {
                 var taskToUpsert: Task
                 if (existingLocalTask != null) {
-                    if (existingLocalTask.needsSync || existingLocalTask.isDeletedLocally) { // Local has pending changes
+                    if (existingLocalTask.needsSync || existingLocalTask.isDeletedLocally) {
                         val remoteTimestamp = taskFromRemoteClean.lastModifiedAt?.seconds ?: 0L
                         val localTimestamp = existingLocalTask.lastModifiedAt?.seconds ?: 0L
 
-                        if (remoteTimestamp > localTimestamp) { // Remote is newer
+                        if (remoteTimestamp > localTimestamp) {
                             Log.i(specificTag, "Conflict: Remote Task ${taskFromRemoteClean.id} (ts:$remoteTimestamp) is newer than local pending (ts:$localTimestamp). Remote wins, attempting merge.")
-                            taskToUpsert = taskFromRemoteClean.copy(
-                                // If remote says deleted, local delete intent is fulfilled.
-                                // If remote NOT deleted, preserve local delete intent if it existed.
-                                isDeletedLocally = if (taskFromRemoteClean.isDeleted) false else existingLocalTask.isDeletedLocally,
-                                // If remote state aligns with local delete intent (e.g. both deleted), no need to sync back.
-                                // Otherwise, if states differ, local change (e.g., undelete) might still be relevant.
-                                needsSync = if (taskFromRemoteClean.isDeleted == existingLocalTask.isDeletedLocally && taskFromRemoteClean.isDeleted) false
-                                else if (taskFromRemoteClean.isDeleted != existingLocalTask.isDeletedLocally) true // If remote isDeleted changed from what local delete intent was, needsSync=true
-                                else existingLocalTask.needsSync // Preserve if no major misalignment or if remote is not deleted and local has other changes.
+                            taskToUpsert = existingLocalTask.copy(
+                                title = taskFromRemoteClean.title,
+                                description = taskFromRemoteClean.description,
+                                isCompleted = taskFromRemoteClean.isCompleted,
+                                isDeleted = taskFromRemoteClean.isDeleted,
+                                lastModifiedAt = taskFromRemoteClean.lastModifiedAt,
+                                needsSync = if (taskFromRemoteClean.isDeleted && existingLocalTask.isDeletedLocally) false else existingLocalTask.needsSync,
+                                isDeletedLocally = if (taskFromRemoteClean.isDeleted) false else existingLocalTask.isDeletedLocally
                             )
                             Log.d(specificTag,"Upserting Task from newer remote: ${taskToUpsert.id}, isDeleted=${taskToUpsert.isDeleted}, isDeletedLocally=${taskToUpsert.isDeletedLocally}, needsSync=${taskToUpsert.needsSync}")
 
-                        } else { // Local is same or newer, or remote has no timestamp
+                        } else {
                             Log.i(specificTag, "Conflict: Local Task ${existingLocalTask.id} (ts:$localTimestamp) has pending sync and is same/newer than remote (ts:$remoteTimestamp). Letting local sync attempt first.")
-                            // Do not update from remote yet, let local sync go first.
-                            // The local observer will pick it up.
-                            return // Exit without changing local data
+                            return
                         }
-                    } else { // No local pending changes, remote data is fine to apply.
+                    } else {
                         taskToUpsert = taskFromRemoteClean
                         Log.d(specificTag, "Remote Task ${changeType}: ${taskToUpsert.id}. Upserting locally. isDeleted=${taskToUpsert.isDeleted}")
                     }
-                } else { // New task from remote, never seen locally.
+                } else {
                     taskToUpsert = taskFromRemoteClean
                     Log.d(specificTag, "Remote Task ADDED (new): ${taskToUpsert.id}. Inserting locally. isDeleted=${taskToUpsert.isDeleted}")
                 }
@@ -346,7 +240,7 @@ class FirebaseSyncManager @Inject constructor(
             }
             DocumentChange.Type.REMOVED -> {
                 Log.d(specificTag, "Remote Task REMOVED: ${taskFromRemoteClean.id}. Hard-deleting locally.")
-                db.taskDao().hardDeleteTaskFromRoom(taskFromRemoteClean) // Assumes hardDeleteTaskFromRoom exists
+                db.taskDao().hardDeleteTaskFromRoom(taskFromRemoteClean)
             }
         }
     }
@@ -359,7 +253,7 @@ class FirebaseSyncManager @Inject constructor(
                 taskRepository.softDeleteTaskInFirestore(task.id)
             } else {
                 Log.d(specificTag, "Pushing Task ${task.id} to Firestore (Create/Update). isDeleted=${task.isDeleted}")
-                taskRepository.createOrUpdateTaskInFirestore(task.copy(lastModifiedAt = Timestamp.now())) // Ensure lastModifiedAt is current for this push
+                taskRepository.createOrUpdateTaskInFirestore(task.copy(lastModifiedAt = Timestamp.now()))
             }
         } catch (e: Exception) {
             Log.e(specificTag, "Error pushing Task ${task.id} to Firestore.", e)
@@ -372,43 +266,39 @@ class FirebaseSyncManager @Inject constructor(
         if (firestoreSuccess) {
             val updatedTask = if (task.isDeletedLocally) {
                 task.copy(
-                    isDeleted = true,          // Align with Firestore (now soft-deleted)
-                    isDeletedLocally = false,  // Local delete intention processed
-                    needsSync = false,         // Synced
-                    lastModifiedAt = Timestamp.now() // Reflect the sync time
+                    isDeleted = true,
+                    isDeletedLocally = false,
+                    needsSync = false,
+                    lastModifiedAt = Timestamp.now()
                 )
             } else {
                 task.copy(
                     needsSync = false,
-                    lastModifiedAt = Timestamp.now() // Reflect the sync time (Firestore server ts will be master)
+                    lastModifiedAt = Timestamp.now()
                 )
             }
             db.taskDao().upsertTask(updatedTask)
             Log.d(specificTag, "Successfully updated local Task ${task.id} flags after Firestore push.")
         } else {
             Log.e(specificTag, "Firestore push failed for Task ${task.id}. Local flags (needsSync, isDeletedLocally) remain unchanged for retry.")
-            // Task remains with needsSync = true (and isDeletedLocally if it was true)
         }
     }
 
     // --- TaskHistory Specific Helpers ---
 
-    private suspend fun processRemoteTaskHistoryChange(changeType: DocumentChange.Type, remoteHistorySource: TaskHistory) {
+    private suspend fun processRemoteTaskHistoryChange(changeType: DocumentChange.Type, remoteHistorySource: TaskHistory, householdGroupId: String) {
         val specificTag = "$TAG_REMOTE_TO_LOCAL-TaskHistory"
-        // Apply similar conflict resolution as for Tasks if TaskHistory can also have local pending changes.
-        // For simplicity, this version assumes remote always wins or simple upsert/delete.
-        val historyFromRemoteClean = remoteHistorySource.copy(needsSync = false /*, isDeletedLocally = false */) // Add if applicable
+        val historyFromRemoteClean = remoteHistorySource.copy(needsSync = false)
 
         Log.d(specificTag, "Processing remote TaskHistory change: Type=$changeType, ID=${historyFromRemoteClean.id}")
         when (changeType) {
             DocumentChange.Type.ADDED, DocumentChange.Type.MODIFIED -> {
                 // TODO: Implement proper conflict resolution for TaskHistory if needed, similar to Tasks
-                // For now, simple upsert:
-                db.taskHistoryDao().insertOrUpdate(historyFromRemoteClean) // Ensure insertOrUpdate exists
+                db.taskHistoryDao().insertOrUpdate(historyFromRemoteClean);
                 Log.d(specificTag, "Upserted TaskHistory ${historyFromRemoteClean.id} from remote.")
             }
             DocumentChange.Type.REMOVED -> {
-                db.taskHistoryDao().delete(historyFromRemoteClean) // Ensure delete takes TaskHistory object or ID
+                db.taskHistoryDao().delete(historyFromRemoteClean)
                 Log.d(specificTag, "Deleted TaskHistory ${historyFromRemoteClean.id} locally as per remote.")
             }
         }
@@ -417,10 +307,7 @@ class FirebaseSyncManager @Inject constructor(
     private suspend fun pushTaskHistoryToFirestore(history: TaskHistory): Boolean {
         val specificTag = "$TAG_LOCAL_TO_REMOTE-TaskHistory"
         return try {
-            // Assuming TaskHistory doesn't have 'isDeletedLocally' logic for now.
-            // If it does, add similar if/else as pushTaskToFirestore.
             Log.d(specificTag, "Pushing TaskHistory ${history.id} to Firestore.")
-            // Ensure your repository method sets a server timestamp for lastModifiedAt.
             taskHistoryRepository.createOrUpdateFirestoreTaskHistory(history)
         } catch (e: Exception) {
             Log.e(specificTag, "Error pushing TaskHistory ${history.id} to Firestore.", e)
@@ -431,12 +318,98 @@ class FirebaseSyncManager @Inject constructor(
     private suspend fun updateLocalTaskHistoryAfterPush(history: TaskHistory, firestoreSuccess: Boolean) {
         val specificTag = "$TAG_LOCAL_TO_REMOTE-TaskHistory"
         if (firestoreSuccess) {
-            // Assuming TaskHistoryDao has an update method that takes the object
-            db.taskHistoryDao().update(history.copy(needsSync = false, lastModifiedAt = Timestamp.now()))
+            db.taskHistoryDao().insertOrUpdate(history.copy(needsSync = false, lastModifiedAt = Timestamp.now())) // Assuming TaskHistory has householdGroupId
             Log.d(specificTag, "Successfully updated local TaskHistory ${history.id} flags after Firestore push.")
         } else {
             Log.e(specificTag, "Firestore push failed for TaskHistory ${history.id}. Local 'needsSync' flag remains true for retry.")
         }
+    }
+
+
+    // --- Generic Setup Functions (Placeholder - review their internal logic for suspend calls) ---
+
+    // IMPORTANT: Review the internal implementation of these generic functions.
+    // If they call 'collect' on a flow, or if their lambda parameters call suspend functions,
+    // they need to be 'suspend' functions themselves or manage coroutine scopes internally.
+
+    private fun <T : Any> setupFirestoreListenerAndInitialFetch(
+        collectionPath: String,
+        modelClass: Class<T>,
+        entityName: String,
+        localUpsertOrDelete: suspend (DocumentChange.Type, T) -> Unit // Made suspend
+    ) {
+        // This function sets up a Firestore listener. The listener's callback will receive data.
+        // The 'localUpsertOrDelete' lambda is suspend, so it must be called from a coroutine.
+        // This implies that the Firestore listener callback should launch a coroutine.
+        Log.d(TAG, "Setting up Firestore listener for $entityName on path $collectionPath")
+        val listener = firestore.collection(collectionPath)
+            // TODO: Add .whereEqualTo("householdGroupId", currentHouseholdGroupId) if applicable for this collection
+            .addSnapshotListener { snapshots, e ->
+                if (e != null) {
+                    Log.w(TAG, "Listen failed for $entityName.", e)
+                    return@addSnapshotListener
+                }
+
+                syncScope.launch { // Launch coroutine to handle snapshots and call suspend lambda
+                    for (dc in snapshots!!.documentChanges) {
+                        val item = dc.document.toObject(modelClass)
+                        // It's possible toObject fails if modelClass doesn't match Firestore doc
+                        if (item != null) {
+                            Log.d(TAG, "$entityName: Remote change: ${dc.type} for doc ${dc.document.id}")
+                            try {
+                                localUpsertOrDelete(dc.type, item)
+                            } catch (ex: Exception) {
+                                Log.e(TAG, "Error processing $entityName remote change for ${dc.document.id}", ex)
+                            }
+                        } else {
+                            Log.w(TAG, "$entityName: Failed to convert document ${dc.document.id} to $modelClass")
+                        }
+                    }
+                }
+            }
+        firestoreListeners.add(listener)
+
+        // TODO: Initial fetch logic might be needed here if the listener doesn't immediately provide all data
+        // For example, a one-time get() call. Ensure it's also within a coroutine if it's a suspend call.
+    }
+
+
+    private suspend fun <T : Any> setupLocalEntityObserverAndInitialPush( // Marked suspend
+        entityName: String,
+        localChangesFlow: Flow<List<T>>,
+        pushItemToFirestore: suspend (T) -> Boolean, // Made suspend
+        updateLocalAfterPush: suspend (T, Boolean) -> Unit, // Made suspend
+        getAllLocalNeedingSyncSnapshot: suspend () -> List<T> // Made suspend as it calls .first()
+    ) {
+        Log.d(TAG, "Setting up Local Entity Observer for $entityName.")
+
+        // Initial push for any items that were modified while offline or before listener was active
+        // This call to getAllLocalNeedingSyncSnapshot is now fine as this function is suspend
+        val initialItemsToSync = getAllLocalNeedingSyncSnapshot()
+        if (initialItemsToSync.isNotEmpty()) {
+            Log.i(TAG, "$entityName: Found ${initialItemsToSync.size} items needing initial sync.")
+            initialItemsToSync.forEach { item ->
+                // This is inside a suspend function, so direct calls to suspend functions are okay.
+                val success = pushItemToFirestore(item)
+                updateLocalAfterPush(item, success)
+            }
+        } else {
+            Log.d(TAG, "$entityName: No items found needing initial sync.")
+        }
+
+        // Observe ongoing local changes
+        // The collect itself is a suspend function call
+        localChangesFlow
+            .conflate() // process only the latest if processing is slow
+            .collect { items ->
+                if (items.isNotEmpty()) {
+                    Log.d(TAG, "$entityName: Detected ${items.size} local changes to sync.")
+                    for (item in items) {
+                        val success = pushItemToFirestore(item)
+                        updateLocalAfterPush(item, success)
+                    }
+                }
+            }
     }
 
 

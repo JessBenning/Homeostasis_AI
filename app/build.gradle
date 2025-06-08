@@ -49,7 +49,7 @@ kapt { // Add or modify this block
 
 dependencies {
     //implementation(platform("org.jetbrains.kotlin:kotlin-bom:2.1.0"))
-    implementation(platform("org.jetbrains.kotlin:kotlin-bom:1.9.22"))
+    implementation(platform("org.jetbrains.kotlin:kotlin-bom:2.0.0"))
     implementation("org.jetbrains.kotlin:kotlin-stdlib")
 
     // Android core libraries
@@ -76,9 +76,9 @@ dependencies {
     kapt "androidx.room:room-compiler:$room_version"
     
     // Firebase
-    //implementation platform('com.google.firebase:firebase-bom:33.13.0')
-    implementation platform('com.google.firebase:firebase-bom:32.7.4')
-    implementation 'com.google.firebase:firebase-analytics' //-ktx?
+    implementation platform('com.google.firebase:firebase-bom:33.13.0')
+    //implementation platform('com.google.firebase:firebase-bom:32.7.4')
+    implementation 'com.google.firebase:firebase-analytics-ktx' //-ktx?
     implementation 'com.google.firebase:firebase-auth-ktx'
     implementation 'com.google.firebase:firebase-firestore-ktx'
     implementation 'com.google.firebase:firebase-storage-ktx'
@@ -110,6 +110,11 @@ dependencies {
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
 
     implementation "com.google.code.gson:gson:2.8.9" // or the latest version
+
+    implementation("androidx.datastore:datastore-preferences:1.0.0")
+// For Kotlin Coroutines support
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.6.4") // Use the latest version
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.6.4") // Use the latest version
 
 
 }

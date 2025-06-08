@@ -140,7 +140,7 @@ class TaskRepository(/* private val taskDao: TaskDao */) : FirebaseRepository<Ta
         return try {
             // Data to be sent to Firestore, EXCLUDING local-only flags
             val firestoreTaskData = mapOf(
-                "id" to task.id,
+//                "id" to task.id,
                 "title" to task.title,
                 "description" to task.description, // Keep even if null to clear field
                 "points" to task.points,
@@ -149,8 +149,9 @@ class TaskRepository(/* private val taskDao: TaskDao */) : FirebaseRepository<Ta
                 "createdAt" to task.createdAt, // Preserve original creation time
                 "lastModifiedAt" to FieldValue.serverTimestamp(), // Use server timestamp for modification
                 "isCompleted" to task.isCompleted, // Persist completion status
-                "isDeleted" to task.isDeleted // Persist soft-delete status (usually false for create/update)
-                // "needsSync" and "isDeletedLocally" are intentionally omitted
+                "isDeleted" to task.isDeleted,// Persist soft-delete status (usually false for create/update)
+                "householdGroupId" to task.householdGroupId
+            // "needsSync" and "isDeletedLocally" are intentionally omitted
             ).filterValues { it != null } // Firestore typically ignores nulls, but explicit filtering can be clearer
 
             firestore.collection(collectionName) // Use collectionName from FirebaseRepository

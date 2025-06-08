@@ -14,7 +14,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 //TODO: change exportSchema to true for production
 @Database(
     entities = [Task::class, com.homeostasis.app.data.model.HouseholdGroup::class, com.homeostasis.app.data.model.Invitation::class, com.homeostasis.app.data.model.User::class, com.homeostasis.app.data.model.TaskHistory::class],
-    version = 8,
+    version = 9,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -39,7 +39,8 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_4_5,
                     MIGRATION_5_6,
                     MIGRATION_6_7,
-                    MIGRATION_7_8
+                    MIGRATION_7_8,
+                    MIGRATION_8_9
                 ).build()
                 INSTANCE = instance
                 instance
@@ -75,6 +76,23 @@ abstract class AppDatabase : RoomDatabase() {
                 database.execSQL("ALTER TABLE task_history ADD COLUMN needsSync INTEGER NOT NULL DEFAULT 0")
             }
         }
+
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE tasks ADD COLUMN householdGroupId TEXT")
+                database.execSQL("ALTER TABLE user ADD COLUMN householdGroupId TEXT")
+                database.execSQL("ALTER TABLE task_history ADD COLUMN householdGroupId TEXT")
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `household_groups` (
+                        `id` TEXT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                """.trimIndent())
+            }
+        }
+
     }
 
 }
