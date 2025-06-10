@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import java.util.Calendar
 import java.util.Date
+import javax.inject.Inject
 
 /**
  * Fragment for displaying the list of tasks.
@@ -33,6 +34,7 @@ import java.util.Date
 class TaskListFragment : Fragment(), AddModTaskDialogFragment.AddModTaskListener, TaskAdapter.OnTaskClickListener {
 
     private val viewModel: TaskListViewModel by viewModels()
+    @Inject lateinit var userRepository: com.homeostasis.app.data.remote.UserRepository // Inject UserRepository
 
     private lateinit var recyclerView: RecyclerView
     private lateinit var emptyView: TextView
@@ -42,7 +44,7 @@ class TaskListFragment : Fragment(), AddModTaskDialogFragment.AddModTaskListener
     private lateinit var swipeCallback: TaskSwipeCallback
 
     // Current user ID (would normally come from authentication)
-    private val currentUserId = "current_user"
+// private val currentUserId = "current_user" // Removed hardcoded user ID
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -88,11 +90,24 @@ class TaskListFragment : Fragment(), AddModTaskDialogFragment.AddModTaskListener
         // - Show a Snackbar or Toast message
         // - Update the UI to reflect the change
         taskAdapter.incrementCompletionCount(task.id)
-        viewModel.recordTaskCompletion(task, currentUserId)
+
+        // Get the current user ID
+        val currentUserId = userRepository.getCurrentUserId()
+
+        if (currentUserId != null) {
+            viewModel.recordTaskCompletion(task, currentUserId) // Pass the actual user ID
+        } else {
+            // Handle case where user is not logged in
+            showSnackbar("Error: User not logged in. Cannot record task completion.")
+        }
+
+        // Removed the redundant call to viewModel.recordTaskCompletion with hardcoded ID
+        // viewModel.recordTaskCompletion(task, currentUserId)
 
 
-//        androidx.compose.material3.Snackbar.make(requireView(), "Task '${task.title}' marked complete!",
-//            androidx.compose.material3.Snackbar.LENGTH_SHORT).show()
+        // Removed the commented out Snackbar code
+        // //        androidx.compose.material3.Snackbar.make(requireView(), "Task '${task.title}' marked complete!",
+        // //            androidx.compose.material3.Snackbar.LENGTH_SHORT).show()
     }
 
     private fun observeTasks() {
@@ -242,40 +257,56 @@ class TaskListFragment : Fragment(), AddModTaskDialogFragment.AddModTaskListener
         // Get the task from the list
         val task = viewModel.tasks.value[position]
 
-        // Update the UI
-        taskAdapter.notifyItemChanged(position)
+        // Get the current user ID
+        val currentUserId = userRepository.getCurrentUserId()
 
-        // Show a snackbar with undo option
-        showCompletionSnackbar(task)
+        if (currentUserId != null) {
+            // Update the UI
+            taskAdapter.notifyItemChanged(position)
 
-        // Update user score (would normally be in ViewModel)
-        updateUserScore(task.points)
+            // Show a snackbar with undo option
+            showCompletionSnackbar(task)
 
-        // Record task completion in local DB
-        viewModel.recordTaskCompletion(task, currentUserId)
+            // Update user score (would normally be in ViewModel)
+            updateUserScore(task.points) // This should ideally be in ViewModel
 
-        taskAdapter.incrementCompletionCount(task.id)
+            // Record task completion in local DB
+            viewModel.recordTaskCompletion(task, currentUserId) // Pass the actual user ID
 
-        //completeTaskWithDate(position)
+            taskAdapter.incrementCompletionCount(task.id)
+
+            //completeTaskWithDate(position)
+        } else {
+            // Handle case where user is not logged in
+            showSnackbar("Error: User not logged in. Cannot complete task.")
+        }
     }
 
     private fun completeTaskWithDate(position: Int, completedAt: Timestamp? = null) {
         // Get the task from the list
         val task = viewModel.tasks.value[position]
 
-        // Update the UI
-        taskAdapter.notifyItemChanged(position)
+        // Get the current user ID
+        val currentUserId = userRepository.getCurrentUserId()
 
-        // Show a snackbar with undo option
-        showCompletionSnackbar(task)
+        if (currentUserId != null) {
+            // Update the UI
+            taskAdapter.notifyItemChanged(position)
 
-        // Update user score (would normally be in ViewModel)
-        updateUserScore(task.points)
+            // Show a snackbar with undo option
+            showCompletionSnackbar(task)
 
-        // Record task completion in local DB
-        viewModel.recordTaskCompletion(task, currentUserId, completedAt)
+            // Update user score (would normally be in ViewModel)
+            updateUserScore(task.points) // This should ideally be in ViewModel
 
-        taskAdapter.incrementCompletionCount(task.id)
+            // Record task completion in local DB
+            viewModel.recordTaskCompletion(task, currentUserId, completedAt) // Pass the actual user ID
+
+            taskAdapter.incrementCompletionCount(task.id)
+        } else {
+            // Handle case where user is not logged in
+            showSnackbar("Error: User not logged in. Cannot complete task.")
+        }
     }
 
 
@@ -286,29 +317,37 @@ class TaskListFragment : Fragment(), AddModTaskDialogFragment.AddModTaskListener
 
         // Launch a coroutine to call the suspend function in the ViewModel
         lifecycleScope.launch {
-            // Get the ID of the most recent task history record for this task and user
-            val latestTaskHistoryId = viewModel.getLatestTaskHistoryIdForTaskAndUser(task.id, currentUserId)
+            // Get the current user ID
+            val currentUserId = userRepository.getCurrentUserId()
 
-            if (latestTaskHistoryId != null) {
-                // Call the ViewModel function to undo the task completion
-                viewModel.undoTaskCompletion(latestTaskHistoryId)
+            if (currentUserId != null) {
+                // Get the ID of the most recent task history record for this task and user
+                val latestTaskHistoryId = viewModel.getLatestTaskHistoryIdForTaskAndUser(task.id, currentUserId)
 
-                // Decrement the completion count in the adapter for immediate UI update
-                // The ViewModel will also handle the task's completion count update which will eventually
-                // be reflected via the observed tasks Flow, but this provides
-                // a more immediate visual feedback. Consider removing this if
-                // relying solely on the Flow for UI updates.
-                taskAdapter.decrementCompletionCount(task.id)
+                if (latestTaskHistoryId != null) {
+                    // Call the ViewModel function to undo the task completion
+                    viewModel.undoTaskCompletion(latestTaskHistoryId)
 
-                // Show a snackbar
-                showUndoCompletionSnackbar(task)
+                    // Decrement the completion count in the adapter for immediate UI update
+                    // The ViewModel will also handle the task's completion count update which will eventually
+                    // be reflected via the observed tasks Flow, but this provides
+                    // a more immediate visual feedback. Consider removing this if
+                    // relying solely on the Flow for UI updates.
+                    taskAdapter.decrementCompletionCount(task.id)
 
-                // Remove the redundant score update calls
-                // updateUserScore(-task.points) // Remove this
-                // updateUserScore(-task.points) // Remove this
+                    // Show a snackbar
+                    showUndoCompletionSnackbar(task)
 
+                    // Remove the redundant score update calls
+                    // updateUserScore(-task.points) // Remove this
+                    // updateUserScore(-task.points) // Remove this
+
+                } else {
+                    showCantUndoSnackbar()
+                }
             } else {
-                showCantUndoSnackbar()
+                // Handle case where user is not logged in
+                showSnackbar("Error: User not logged in. Cannot undo task completion.")
             }
             // Update the UI (this might be redundant if relying on Flow)
             // Update the UI (this might be redundant if relying on Flow)

@@ -317,22 +317,32 @@ class FirebaseSyncManager @Inject constructor(
 
     private suspend fun processRemoteUserChange(changeType: DocumentChange.Type, remoteUserSource: com.homeostasis.app.data.model.User, householdGroupId: String) {
         val specificTag = "$TAG_REMOTE_TO_LOCAL-User"
-        val userFromRemoteClean = remoteUserSource.copy(needsSync = false, isDeletedLocally = false) // Assuming User has these flags if needed for local-to-remote sync
+        val userFromRemoteClean = remoteUserSource.copy(needsSync = false, isDeletedLocally = false)
 
         Log.d(specificTag, "Processing remote User change: Type=$changeType, ID=${userFromRemoteClean.id}")
         when (changeType) {
             DocumentChange.Type.ADDED, DocumentChange.Type.MODIFIED -> {
-                // For users, we might not need complex conflict resolution like tasks,
-                // as profile updates are typically user-initiated and less frequent.
-                // A simple upsert should suffice for now.
+                // Upsert the user into the local database
                 db.userDao().upsertUser(userFromRemoteClean)
                 Log.d(specificTag, "Upserted User ${userFromRemoteClean.id} from remote.")
+
+                // After upserting, check if there's a profile image URL and initiate download
+                if (!userFromRemoteClean.profileImageUrl.isNullOrBlank()) {
+                    // Launch a separate coroutine for the download to avoid blocking the sync listener
+                    syncScope.launch {
+                        downloadAndSaveProfilePicture(userFromRemoteClean.id, userFromRemoteClean.profileImageUrl!!)
+                    }
+                } else {
+                    // If no profile image URL, ensure any existing local file is removed (optional, depending on desired behavior)
+                    // For now, we'll leave existing local files if the URL is removed remotely.
+                }
             }
             DocumentChange.Type.REMOVED -> {
-                // If a user is removed from Firestore (e.g., account deletion),
-                // we should probably remove them from the local Room DB as well.
+                // If a user is removed from Firestore, remove them from the local Room DB
                 db.userDao().deleteUser(userFromRemoteClean)
                 Log.d(specificTag, "Deleted User ${userFromRemoteClean.id} locally as per remote.")
+                // Also delete the local profile picture file
+                deleteLocalProfilePicture(userFromRemoteClean.id)
             }
         }
     }
@@ -620,6 +630,68 @@ class FirebaseSyncManager @Inject constructor(
             Log.d(specificTag, "Successfully updated local User ${user.id} flags after Firestore push.")
         } else {
             Log.e(specificTag, "Firestore push failed for User ${user.id}. Local 'needsSync' flag remains true for retry.")
+        }
+    }
+
+    /**
+     * Downloads a profile picture from a URL and saves it to local storage.
+     *
+     * @param userId The ID of the user the picture belongs to.
+     * @param imageUrl The URL of the profile picture.
+     */
+    private suspend fun downloadAndSaveProfilePicture(userId: String, imageUrl: String) {
+        val specificTag = "$TAG_REMOTE_TO_LOCAL-User-Download"
+        try {
+            val localFile = File(context.filesDir, "profile_picture_${userId}.jpg")
+
+            // Use Glide or a similar library to download the image
+            // Glide requires a Context and runs asynchronously.
+            // Since this is a suspend function, we need to bridge the suspend world with Glide's async world.
+            // A simple way is to use Glide's .downloadOnly() and await its completion.
+
+            val future = com.bumptech.glide.Glide.with(context)
+                .asFile()
+                .load(imageUrl)
+                .downloadOnly(com.bumptech.glide.request.target.Target.SIZE_ORIGINAL, com.bumptech.glide.request.target.Target.SIZE_ORIGINAL)
+
+            val downloadedFile = future.get() // This will block until download is complete
+
+            if (downloadedFile != null) {
+                // Copy the downloaded file to the desired local storage location
+                downloadedFile.copyTo(localFile, overwrite = true)
+                Log.d(specificTag, "Successfully downloaded and saved profile picture for user $userId to ${localFile.absolutePath}")
+
+                // Clean up the temporary file created by Glide
+                downloadedFile.delete()
+
+                // Optional: Update the local user record with the local file path if needed for direct access
+                // However, deriving the path when needed might be sufficient.
+                // For now, we rely on deriving the path.
+
+            } else {
+                Log.e(specificTag, "Failed to download profile picture for user $userId from URL: $imageUrl")
+            }
+
+        } catch (e: Exception) {
+            Log.e(specificTag, "Error downloading or saving profile picture for user $userId.", e)
+        }
+    }
+
+    /**
+     * Deletes the local profile picture file for a given user ID.
+     *
+     * @param userId The ID of the user whose profile picture to delete.
+     */
+    private fun deleteLocalProfilePicture(userId: String) {
+        val specificTag = "$TAG-LocalFileDelete"
+        val localFile = File(context.filesDir, "profile_picture_${userId}.jpg")
+        if (localFile.exists()) {
+            try {
+                localFile.delete()
+                Log.d(specificTag, "Successfully deleted local profile picture file for user $userId.")
+            } catch (e: Exception) {
+                Log.e(specificTag, "Error deleting local profile picture file for user $userId.", e)
+            }
         }
     }
 

@@ -73,6 +73,7 @@ class TaskHistoryAdapter :
         private val points: TextView = view.findViewById(R.id.log_item_points)
         private val completedBy: TextView = view.findViewById(R.id.log_item_completed_by)
         private val completedDate: TextView = view.findViewById(R.id.log_item_completed_date)
+        private val completedByUserProfilePicture: ImageView = view.findViewById(R.id.log_item_completed_by_user_profile_picture) // Add this
 
 
         fun bind(item: TaskHistoryItem) {
@@ -81,6 +82,13 @@ class TaskHistoryAdapter :
             completedBy.text = itemView.context.getString(R.string.task_history_completed_by, item.completedByUserName) // Example: "Completed by: John"
             completedDate.text = Converters.formatTimestampToString(item.completedAt)
 
+            // Load the profile picture using Glide from the local file path
+            Glide.with(itemView.context)
+                .load(item.completedByUserProfilePicUrl) // Load from the local file path
+                .placeholder(R.drawable.ic_default_profile) // Add a default placeholder
+                .error(R.drawable.ic_profile_load_error) // Add an error placeholder
+                .circleCrop()
+                .into(completedByUserProfilePicture) // Load into the new ImageView
         }
     }
 

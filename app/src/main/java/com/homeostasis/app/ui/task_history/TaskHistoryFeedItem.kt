@@ -10,7 +10,7 @@ sealed interface TaskHistoryFeedItem {
     data class UserScoreSummaryItem(
         val userId: String,
         val userName: String,
-        val userProfilePicUrl: String?,
+        val userProfilePicUrl: String?, // This will store the local file path
         val totalScore: Int
     ) : TaskHistoryFeedItem
 
@@ -23,7 +23,7 @@ sealed interface TaskHistoryFeedItem {
         val completedAt: Timestamp,
         val points: Int,
         val completedByUserName: String,
-        val completedByUserProfilePicUrl: String?
+        val completedByUserProfilePicUrl: String? // This will store the local file path
     ) : TaskHistoryFeedItem
 
     // Optional: Add other item types if needed for this specific feed

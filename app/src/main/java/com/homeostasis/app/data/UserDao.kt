@@ -32,6 +32,9 @@ interface UserDao {
     @Query("SELECT * FROM User WHERE needsSync = 1 AND householdGroupId = :householdGroupId")
     fun getUsersRequiringSync(householdGroupId: String): Flow<List<User>>
 
+    @Query("SELECT * FROM User WHERE householdGroupId = :householdGroupId")
+    fun getAllUsersFlow(householdGroupId: String): Flow<List<User>>
+
     /**
      * Updates the user's profile information in the local database and marks it for sync.
      *

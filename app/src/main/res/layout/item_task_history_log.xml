@@ -8,14 +8,15 @@
 
     <TextView
         android:id="@+id/log_item_task_name"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
+        android:layout_width="271dp"
+        android:layout_height="40dp"
         android:layout_marginEnd="8dp"
+        android:textColor="?android:attr/textColorPrimary"
         android:textSize="16sp"
         android:textStyle="bold"
-        android:textColor="?android:attr/textColorPrimary"
-        app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toStartOf="@+id/log_item_points"
+        app:layout_constraintHorizontal_bias="1.0"
+        app:layout_constraintStart_toEndOf="@+id/log_item_completed_by_user_profile_picture"
         app:layout_constraintTop_toTopOf="parent"
         tools:text="Reviewed Project Proposal and Gave Feedback" />
 
@@ -31,15 +32,23 @@
         app:layout_constraintBottom_toBottomOf="@+id/log_item_task_name"
         tools:text="+25 pts" />
 
+    <ImageView
+        android:id="@+id/log_item_completed_by_user_profile_picture"
+        android:layout_width="38dp"
+        android:layout_height="40dp"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        tools:src="@drawable/ic_default_profile" />
+
     <TextView
         android:id="@+id/log_item_completed_by"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
-        android:textSize="14sp"
         android:textColor="?android:attr/textColorSecondary"
-        app:layout_constraintStart_toStartOf="parent"
+        android:textSize="14sp"
         app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/log_item_task_name"
         tools:text="Completed by: Jane Doe" />
 
@@ -47,9 +56,8 @@
         android:id="@+id/log_item_completed_date"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:textSize="12sp"
         android:textColor="?android:attr/textColorTertiary"
+        android:textSize="12sp"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/log_item_completed_by"
         tools:text="May 28, 2024 at 10:35 AM" />
