@@ -284,37 +284,42 @@ class TaskListFragment : Fragment(), AddModTaskDialogFragment.AddModTaskListener
         // Get the task from the list
         val task = viewModel.tasks.value[position]
 
-        if (taskAdapter.decrementCompletionCount(task.id)) {
-            //ok to undo, counter >0
+        // Launch a coroutine to call the suspend function in the ViewModel
+        lifecycleScope.launch {
+            // Get the ID of the most recent task history record for this task and user
+            val latestTaskHistoryId = viewModel.getLatestTaskHistoryIdForTaskAndUser(task.id, currentUserId)
 
+            if (latestTaskHistoryId != null) {
+                // Call the ViewModel function to undo the task completion
+                viewModel.undoTaskCompletion(latestTaskHistoryId)
 
-            // Update user score (would normally be in ViewModel)
-            updateUserScore(-task.points)
+                // Decrement the completion count in the adapter for immediate UI update
+                // The ViewModel will also handle the task's completion count update which will eventually
+                // be reflected via the observed tasks Flow, but this provides
+                // a more immediate visual feedback. Consider removing this if
+                // relying solely on the Flow for UI updates.
+                taskAdapter.decrementCompletionCount(task.id)
 
-            // Show a snackbar
-            showUndoCompletionSnackbar(task)
+                // Show a snackbar
+                showUndoCompletionSnackbar(task)
 
-            // Update user score (would normally be in ViewModel)
-            updateUserScore(-task.points)
+                // Remove the redundant score update calls
+                // updateUserScore(-task.points) // Remove this
+                // updateUserScore(-task.points) // Remove this
 
-        }else
-            showCantUndoSnackbar()
-        // Update the UI
-        taskAdapter.notifyItemChanged(position)
-
+            } else {
+                showCantUndoSnackbar()
+            }
+            // Update the UI (this might be redundant if relying on Flow)
+            // Update the UI (this might be redundant if relying on Flow)
+            // taskAdapter.notifyItemChanged(position) // Consider if this is still needed
+        }
     }
 
     private fun showCompletionSnackbar(task: Task) {
         val message = "Task '${task.title}' completed: +${task.points} points"
 
         Snackbar.make(requireView(), message, Snackbar.LENGTH_LONG)
-            .setAction("UNDO") {
-                // Find the task in the list
-                //val position = tasks.indexOfFirst { it.id == task.id }
-                //if (position != -1) {
-                //    completeTask(position)
-                //}
-            }
             .show()
     }
 

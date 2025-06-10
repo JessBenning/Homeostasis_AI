@@ -45,6 +45,7 @@ data class TaskHistory(
 
     
         val needsSync: Boolean = false,
+        val isDeletedLocally: Boolean = false, // Add this field
         
         @PropertyName("householdGroupId")
         val householdGroupId: String = ""
@@ -61,6 +62,7 @@ data class TaskHistory(
             isArchived = false,
             archivedInResetId = null,
             needsSync = false,
+            isDeletedLocally = false, // Add this field
             lastModifiedAt = Timestamp.now(),
             householdGroupId = ""
         )

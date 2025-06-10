@@ -14,7 +14,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 //TODO: change exportSchema to true for production
 @Database(
     entities = [Task::class, com.homeostasis.app.data.model.HouseholdGroup::class, com.homeostasis.app.data.model.Invitation::class, com.homeostasis.app.data.model.User::class, com.homeostasis.app.data.model.TaskHistory::class],
-    version = 9,
+    version = 12, // Database version 12
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -40,8 +40,13 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_5_6,
                     MIGRATION_6_7,
                     MIGRATION_7_8,
-                    MIGRATION_8_9
-                ).build()
+                    MIGRATION_8_9,
+                    MIGRATION_9_10,
+                    MIGRATION_10_11,
+                    MIGRATION_11_12
+                )
+                .fallbackToDestructiveMigrationFrom(13) // Allow destructive migration from version 13
+                .build()
                 INSTANCE = instance
                 instance
             }
@@ -79,9 +84,11 @@ abstract class AppDatabase : RoomDatabase() {
 
         val MIGRATION_8_9 = object : Migration(8, 9) {
             override fun migrate(database: SupportSQLiteDatabase) {
-                database.execSQL("ALTER TABLE tasks ADD COLUMN householdGroupId TEXT")
-                database.execSQL("ALTER TABLE user ADD COLUMN householdGroupId TEXT")
-                database.execSQL("ALTER TABLE task_history ADD COLUMN householdGroupId TEXT")
+                // Add householdGroupId to tasks table as NOT NULL with a default value
+                database.execSQL("ALTER TABLE tasks ADD COLUMN householdGroupId TEXT NOT NULL DEFAULT ''")
+                // Add householdGroupId to user table as NOT NULL with a default value
+                database.execSQL("ALTER TABLE user ADD COLUMN householdGroupId TEXT NOT NULL DEFAULT ''")
+                database.execSQL("ALTER TABLE task_history ADD COLUMN householdGroupId TEXT NOT NULL DEFAULT ''")
                 database.execSQL("""
                     CREATE TABLE IF NOT EXISTS `household_groups` (
                         `id` TEXT NOT NULL,
@@ -90,9 +97,35 @@ abstract class AppDatabase : RoomDatabase() {
                         PRIMARY KEY(`id`)
                     )
                 """.trimIndent())
+    
+            }
+
+        }
+
+
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+
+                database.execSQL("ALTER TABLE user ADD COLUMN needsSync INTEGER NOT NULL DEFAULT 0")
+                database.execSQL("ALTER TABLE user ADD COLUMN isDeletedLocally INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+
+                database.execSQL("ALTER TABLE user ADD COLUMN lastModifiedAt INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                // Add the new 'isDeletedLocally' column to the 'task_history' table.
+                // SQLite uses INTEGER for booleans (0 for false, 1 for true).
+                // NOT NULL DEFAULT 0 sets new rows and existing rows (for this new column) to false.
+                database.execSQL("ALTER TABLE task_history ADD COLUMN isDeletedLocally INTEGER NOT NULL DEFAULT 0")
             }
         }
 
     }
-
 }

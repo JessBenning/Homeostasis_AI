@@ -232,6 +232,27 @@ class TaskHistoryRepository(private val context: android.content.Context) : Fire
             false
         }
     }
-    
+    /**
+     * Deletes a task history entry from Firestore.
+     * This is intended to be called by the sync manager after a local deletion is synced.
+     */
+    suspend fun deleteFirestoreTaskHistory(taskHistoryId: String): Boolean {
+        val TAG_REPO = "TaskHistoryRepo_Delete" // Specific tag
+        return try {
+            if (taskHistoryId.isBlank()) {
+                Log.e(TAG_REPO, "TaskHistory ID is blank. Cannot delete from Firestore.")
+                return false // Firestore document IDs cannot be blank
+            }
+            Log.d(TAG_REPO, "Attempting to delete TaskHistory from Firestore: ID=$taskHistoryId")
+            collection.document(taskHistoryId).delete().await()
+            Log.d(TAG_REPO, "Successfully deleted TaskHistory $taskHistoryId from Firestore.")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG_REPO, "Error deleting TaskHistory $taskHistoryId from Firestore. Collection: $collectionName", e)
+            false
+        }
+    }
+
     override fun getModelClass(): Class<TaskHistory> = TaskHistory::class.java
 }
+

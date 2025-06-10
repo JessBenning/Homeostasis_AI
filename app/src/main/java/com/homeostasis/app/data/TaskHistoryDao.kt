@@ -31,6 +31,9 @@ interface TaskHistoryDao {
     @Delete
     suspend fun delete(taskHistory: TaskHistory)
 
+    @Query("UPDATE task_history SET isDeletedLocally = 1, needsSync = 1 WHERE id = :id AND householdGroupId = :householdGroupId")
+    suspend fun markTaskHistoryAsDeletedLocally(id: String, householdGroupId: String)
+
     @Query("SELECT * FROM task_history WHERE householdGroupId = :householdGroupId")
     fun getAllTaskHistory(householdGroupId: String): Flow<List<TaskHistory>>
 
@@ -40,6 +43,8 @@ interface TaskHistoryDao {
     @Query("SELECT * FROM task_history WHERE id = :id AND householdGroupId = :householdGroupId")
     suspend fun getTaskHistoryById(id: String, householdGroupId: String): TaskHistory?
 
+    @Query("SELECT * FROM task_history WHERE taskId = :taskId AND userId = :userId AND householdGroupId = :householdGroupId ORDER BY completedAt DESC LIMIT 1")
+    suspend fun getLatestTaskHistoryForTaskAndUser(taskId: String, userId: String, householdGroupId: String): TaskHistory?
 
     @Upsert // Or @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdate(taskHistory: TaskHistory)
@@ -53,6 +58,9 @@ interface TaskHistoryDao {
 
     @Query("SELECT * FROM task_history WHERE needsSync = 1 AND householdGroupId = :householdGroupId")
     fun getModifiedTaskHistoryRequiringSync(householdGroupId: String): Flow<List<TaskHistory>>
+
+    @Query("SELECT * FROM task_history WHERE isDeletedLocally = 1 AND needsSync = 1 AND householdGroupId = :householdGroupId")
+    fun getLocallyDeletedTaskHistoryRequiringSync(householdGroupId: String): Flow<List<TaskHistory>>
 
     @Query("SELECT * FROM task_history WHERE householdGroupId = :householdGroupId ORDER BY completedAt DESC" ) // Or your actual table name
     fun getAllTaskHistoryFlow(householdGroupId: String): Flow<List<TaskHistory>>

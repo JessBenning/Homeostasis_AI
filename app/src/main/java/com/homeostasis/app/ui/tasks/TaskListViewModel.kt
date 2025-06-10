@@ -21,10 +21,11 @@ import kotlinx.coroutines.flow.flowOf
 
 @HiltViewModel
 class TaskListViewModel @Inject constructor(
-    private val taskRepository: TaskRepository, // Inject TaskRepository
+    private val taskRepository: TaskRepository, // Keep TaskRepository
+    private val userRepository: com.homeostasis.app.data.remote.UserRepository, // Add UserRepository
     private val taskHistoryDao: TaskHistoryDao,
     private val taskDao: TaskDao,
-    private val householdGroupIdProvider: HouseholdGroupIdProvider // Inject HouseholdGroupIdProvider
+    private val householdGroupIdProvider: HouseholdGroupIdProvider // Keep HouseholdGroupIdProvider
 ) : ViewModel() {
 
     private val _tasks = MutableStateFlow<List<Task>>(emptyList())
@@ -131,6 +132,42 @@ class TaskListViewModel @Inject constructor(
                 Log.e(TAG, "Task ID is blank, cannot mark as deleted.")
             }
         }
+    }
+
+    fun undoTaskCompletion(taskHistoryId: String) {
+        viewModelScope.launch {
+            try {
+                // 1. Fetch the TaskHistory record to get details (like points and taskId) before deleting
+                val householdGroupId = householdGroupIdProvider.getHouseholdGroupId().first() ?: HouseholdGroupIdProvider.DEFAULT_HOUSEHOLD_GROUP_ID
+                val taskHistory = taskHistoryDao.getTaskHistoryById(taskHistoryId, householdGroupId)
+
+                if (taskHistory != null) {
+                    // 2. Mark the TaskHistory record as deleted locally
+                    taskHistoryDao.markTaskHistoryAsDeletedLocally(taskHistoryId, householdGroupId)
+                    Log.d(TAG, "SUCCESS: TaskHistory entry marked as deleted locally. ID: $taskHistoryId")
+
+                    // 3. Update user score
+//                    val userId = userRepository.getCurrentUserId()
+//                    if (userId != null) {
+//                        userRepository.updateUserScore(userId, -taskHistory.pointValue)
+//                        Log.d(TAG, "SUCCESS: Updated user score by subtracting ${taskHistory.pointValue} points.")
+//                    } else {
+//                        Log.e(TAG, "ERROR: Could not get current user ID to update score.")
+//                    }
+
+                } else {
+                    Log.e(TAG, "ERROR: Could not find TaskHistory entry with ID $taskHistoryId to undo.")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "ERROR undoing TaskHistory completion: ${e.message}", e)
+            }
+        }
+    }
+
+    suspend fun getLatestTaskHistoryIdForTaskAndUser(taskId: String, userId: String): String? {
+        val householdGroupId = householdGroupIdProvider.getHouseholdGroupId().first() ?: HouseholdGroupIdProvider.DEFAULT_HOUSEHOLD_GROUP_ID
+        val latestHistory = taskHistoryDao.getLatestTaskHistoryForTaskAndUser(taskId, userId, householdGroupId)
+        return latestHistory?.id
     }
 
     fun recordTaskCompletion(task: Task, userId: String, completedAt: Timestamp? = null) {

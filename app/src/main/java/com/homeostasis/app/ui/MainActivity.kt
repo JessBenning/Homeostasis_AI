@@ -63,6 +63,10 @@ class MainActivity : AppCompatActivity() {
                     navController.navigate(R.id.navigation_task_history)
                     true
                 }
+                R.id.navigation_profile -> {
+                    navController.navigate(R.id.navigation_profile)
+                    true
+                }
                 R.id.navigation_settings -> {
                     navController.navigate(R.id.navigation_settings)
                     true

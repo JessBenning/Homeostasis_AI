@@ -5,6 +5,9 @@ import android.content.Context
 import androidx.room.Room
 import com.google.firebase.firestore.FirebaseFirestore
 import com.homeostasis.app.data.AppDatabase
+import com.homeostasis.app.data.AppDatabase.Companion.MIGRATION_11_12
+
+import com.homeostasis.app.data.HouseholdGroupIdProvider
 import com.homeostasis.app.data.TaskDao
 import com.homeostasis.app.data.TaskHistoryDao
 import com.homeostasis.app.data.UserDao
@@ -25,9 +28,14 @@ object FirebaseModule {
     
     @Provides
     @Singleton
-    fun provideUserRepository(): UserRepository {
-        return UserRepository()
+    fun provideUserRepository(
+        firebaseStorageRepository: FirebaseStorageRepository, // Inject FirebaseStorageRepository
+        userDao: UserDao, // Inject UserDao
+        householdGroupIdProvider: HouseholdGroupIdProvider // Inject HouseholdGroupIdProvider
+    ): UserRepository {
+        return UserRepository(firebaseStorageRepository, userDao, householdGroupIdProvider) // Pass the injected repositories and provider
     }
+
     
     @Provides
     @Singleton
@@ -54,7 +62,11 @@ object FirebaseModule {
                 AppDatabase.MIGRATION_5_6,
                 AppDatabase.MIGRATION_6_7,
                 AppDatabase.MIGRATION_7_8,
-                AppDatabase.MIGRATION_8_9
+                AppDatabase.MIGRATION_8_9,
+                AppDatabase.MIGRATION_9_10,
+                AppDatabase.MIGRATION_10_11,
+                AppDatabase.MIGRATION_11_12
+
             )
             .build()
     }
@@ -106,6 +118,12 @@ object FirebaseModule {
     @Singleton
     fun provideFirebaseStorageRepository(): FirebaseStorageRepository {
         return FirebaseStorageRepository()
+    }
+
+    @Provides
+    @Singleton
+    fun provideImageUtils(): com.homeostasis.app.utils.ImageUtils {
+        return com.homeostasis.app.utils.ImageUtils
     }
 
     @Provides

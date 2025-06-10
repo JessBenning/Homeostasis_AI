@@ -16,6 +16,9 @@ import kotlinx.coroutines.flow.*
 import javax.inject.Inject
 import javax.inject.Singleton
 import android.content.Context // Keep if context is used for something else
+import com.homeostasis.app.data.remote.UserRepository
+import java.io.File
+
 //import androidx.compose.ui.input.key.type
 
 
@@ -25,6 +28,7 @@ class FirebaseSyncManager @Inject constructor(
     private val firestore: FirebaseFirestore,
     private val taskRepository: TaskRepository,
     private val taskHistoryRepository: TaskHistoryRepository,
+    private val userRepository: UserRepository,
     private val householdGroupIdProvider: HouseholdGroupIdProvider,
     @ApplicationContext private val context: Context // Keep if needed
 ) {
@@ -60,6 +64,16 @@ class FirebaseSyncManager @Inject constructor(
             setupLocalTaskHistoryObserverAndInitialPush()
         }
 
+
+        // --- User Synchronization ---
+        syncScope.launch {
+            syncUsers() // Start user synchronization
+        }
+
+        // --- User Synchronization (Local -> Remote) ---
+        syncScope.launch {
+            setupLocalUserObserverAndInitialPush() // Start local-to-remote user sync
+        }
 
         syncScope.launch {
             // Monitor the lifecycle of the syncScope to clean up listeners if it's cancelled
@@ -176,16 +190,31 @@ class FirebaseSyncManager @Inject constructor(
             } ?: flowOf(emptyList())
         }
 
+        // Add flow for locally deleted task history
+        val deletedLocallyHistoryFlow = householdGroupIdProvider.getHouseholdGroupId().flatMapLatest { householdGroupId ->
+            householdGroupId?.let {
+                db.taskHistoryDao().getLocallyDeletedTaskHistoryRequiringSync(it)
+            } ?: flowOf(emptyList())
+        }
+
+        // Combine modified and locally deleted history flows
+        val combinedHistoryNeedingSyncFlow = combine(modifiedHistoryFlow, deletedLocallyHistoryFlow) { modified, deleted ->
+            (modified + deleted).distinctBy { it.id }
+        }
+
         // See comments for setupLocalTaskObserverAndInitialPush regarding setupLocalEntityObserverAndInitialPush
         setupLocalEntityObserverAndInitialPush(
             entityName = "TaskHistory",
-            localChangesFlow = modifiedHistoryFlow,
+            localChangesFlow = combinedHistoryNeedingSyncFlow, // Use the combined flow
             pushItemToFirestore = { history -> pushTaskHistoryToFirestore(history) }, // pushTaskHistoryToFirestore is suspend
             updateLocalAfterPush = { history, success -> updateLocalTaskHistoryAfterPush(history, success) }, // updateLocalTaskHistoryAfterPush is suspend
             getAllLocalNeedingSyncSnapshot =  { // This lambda calls .first() which is suspend
                 runBlocking { // Or ensure setupLocalEntityObserverAndInitialPush calls this from a coroutine
                     householdGroupIdProvider.getHouseholdGroupId().first()?.let { householdGroupId ->
-                        db.taskHistoryDao().getAllTaskHistoryBlocking(householdGroupId).filter { it.needsSync }
+                        // Include both modified and locally deleted in the snapshot
+                        val modified = db.taskHistoryDao().getAllTaskHistoryBlocking(householdGroupId).filter { it.needsSync && !it.isDeletedLocally }
+                        val deleted = db.taskHistoryDao().getAllTaskHistoryBlocking(householdGroupId).filter { it.isDeletedLocally }
+                        (modified + deleted).distinctBy { it.id }
                     } ?: emptyList()
                 }
             }
@@ -284,6 +313,30 @@ class FirebaseSyncManager @Inject constructor(
         }
     }
 
+    // --- User Specific Helpers ---
+
+    private suspend fun processRemoteUserChange(changeType: DocumentChange.Type, remoteUserSource: com.homeostasis.app.data.model.User, householdGroupId: String) {
+        val specificTag = "$TAG_REMOTE_TO_LOCAL-User"
+        val userFromRemoteClean = remoteUserSource.copy(needsSync = false, isDeletedLocally = false) // Assuming User has these flags if needed for local-to-remote sync
+
+        Log.d(specificTag, "Processing remote User change: Type=$changeType, ID=${userFromRemoteClean.id}")
+        when (changeType) {
+            DocumentChange.Type.ADDED, DocumentChange.Type.MODIFIED -> {
+                // For users, we might not need complex conflict resolution like tasks,
+                // as profile updates are typically user-initiated and less frequent.
+                // A simple upsert should suffice for now.
+                db.userDao().upsertUser(userFromRemoteClean)
+                Log.d(specificTag, "Upserted User ${userFromRemoteClean.id} from remote.")
+            }
+            DocumentChange.Type.REMOVED -> {
+                // If a user is removed from Firestore (e.g., account deletion),
+                // we should probably remove them from the local Room DB as well.
+                db.userDao().deleteUser(userFromRemoteClean)
+                Log.d(specificTag, "Deleted User ${userFromRemoteClean.id} locally as per remote.")
+            }
+        }
+    }
+
     // --- TaskHistory Specific Helpers ---
 
     private suspend fun processRemoteTaskHistoryChange(changeType: DocumentChange.Type, remoteHistorySource: TaskHistory, householdGroupId: String) {
@@ -307,8 +360,14 @@ class FirebaseSyncManager @Inject constructor(
     private suspend fun pushTaskHistoryToFirestore(history: TaskHistory): Boolean {
         val specificTag = "$TAG_LOCAL_TO_REMOTE-TaskHistory"
         return try {
-            Log.d(specificTag, "Pushing TaskHistory ${history.id} to Firestore.")
-            taskHistoryRepository.createOrUpdateFirestoreTaskHistory(history)
+            if (history.isDeletedLocally) {
+                Log.d(specificTag, "Pushing TaskHistory ${history.id} to Firestore (Delete).")
+                // Assuming taskHistoryRepository has a delete function
+                taskHistoryRepository.deleteFirestoreTaskHistory(history.id) // Assuming delete function takes ID
+            } else {
+                Log.d(specificTag, "Pushing TaskHistory ${history.id} to Firestore (Create/Update).")
+                taskHistoryRepository.createOrUpdateFirestoreTaskHistory(history)
+            }
         } catch (e: Exception) {
             Log.e(specificTag, "Error pushing TaskHistory ${history.id} to Firestore.", e)
             false
@@ -318,8 +377,15 @@ class FirebaseSyncManager @Inject constructor(
     private suspend fun updateLocalTaskHistoryAfterPush(history: TaskHistory, firestoreSuccess: Boolean) {
         val specificTag = "$TAG_LOCAL_TO_REMOTE-TaskHistory"
         if (firestoreSuccess) {
-            db.taskHistoryDao().insertOrUpdate(history.copy(needsSync = false, lastModifiedAt = Timestamp.now())) // Assuming TaskHistory has householdGroupId
-            Log.d(specificTag, "Successfully updated local TaskHistory ${history.id} flags after Firestore push.")
+            if (history.isDeletedLocally) {
+                // If it was locally deleted and remote push was successful, hard delete locally
+                db.taskHistoryDao().delete(history) // Assuming TaskHistoryDao has a delete(TaskHistory) function
+                Log.d(specificTag, "Successfully hard-deleted local TaskHistory ${history.id} after successful remote deletion.")
+            } else {
+                // If it was modified (not deleted) and remote push was successful, just update needsSync flag
+                db.taskHistoryDao().insertOrUpdate(history.copy(needsSync = false, lastModifiedAt = Timestamp.now())) // Assuming TaskHistory has householdGroupId
+                Log.d(specificTag, "Successfully updated local TaskHistory ${history.id} flags after Firestore push.")
+            }
         } else {
             Log.e(specificTag, "Firestore push failed for TaskHistory ${history.id}. Local 'needsSync' flag remains true for retry.")
         }
@@ -332,7 +398,7 @@ class FirebaseSyncManager @Inject constructor(
     // If they call 'collect' on a flow, or if their lambda parameters call suspend functions,
     // they need to be 'suspend' functions themselves or manage coroutine scopes internally.
 
-    private fun <T : Any> setupFirestoreListenerAndInitialFetch(
+    private suspend fun <T : Any> setupFirestoreListenerAndInitialFetch( // Marked suspend
         collectionPath: String,
         modelClass: Class<T>,
         entityName: String,
@@ -342,8 +408,17 @@ class FirebaseSyncManager @Inject constructor(
         // The 'localUpsertOrDelete' lambda is suspend, so it must be called from a coroutine.
         // This implies that the Firestore listener callback should launch a coroutine.
         Log.d(TAG, "Setting up Firestore listener for $entityName on path $collectionPath")
+
+        // Get the current household group ID
+        val householdGroupId = householdGroupIdProvider.getHouseholdGroupId().first() // Use first() to get the current value
+
+        if (householdGroupId == null) {
+            Log.w(TAG, "Cannot set up Firestore listener for $entityName: Household Group ID is null.")
+            return // Cannot set up listener without a household group ID
+        }
+
         val listener = firestore.collection(collectionPath)
-            // TODO: Add .whereEqualTo("householdGroupId", currentHouseholdGroupId) if applicable for this collection
+            .whereEqualTo("householdGroupId", householdGroupId) // Filter by householdGroupId
             .addSnapshotListener { snapshots, e ->
                 if (e != null) {
                     Log.w(TAG, "Listen failed for $entityName.", e)
@@ -369,8 +444,9 @@ class FirebaseSyncManager @Inject constructor(
             }
         firestoreListeners.add(listener)
 
-        // TODO: Initial fetch logic might be needed here if the listener doesn't immediately provide all data
+        // Initial fetch logic might be needed here if the listener doesn't immediately provide all data
         // For example, a one-time get() call. Ensure it's also within a coroutine if it's a suspend call.
+        // For now, assuming addSnapshotListener provides initial data.
     }
 
 
@@ -428,10 +504,135 @@ class FirebaseSyncManager @Inject constructor(
         }
     }
 
-    fun syncUsers() {
-        syncScope.launch {
-            // TODO: Implement user synchronization logic
-            Log.d(TAG, "syncUsers called - (Implementation Pending)")
+    /**
+     * Sets up the local observer for User entities and pushes changes to Firestore.
+     */
+    private suspend fun setupLocalUserObserverAndInitialPush() { // Marked suspend
+        Log.d(TAG, "Setting up Local User Observer & Initial Push.")
+        val modifiedUsersFlow = householdGroupIdProvider.getHouseholdGroupId().flatMapLatest { householdGroupId ->
+            householdGroupId?.let {
+                db.userDao().getUsersRequiringSync(it) // Use the new query
+            } ?: flowOf(emptyList())
         }
+
+        setupLocalEntityObserverAndInitialPush(
+            entityName = "User",
+            localChangesFlow = modifiedUsersFlow,
+            pushItemToFirestore = { user -> // Modified lambda to handle image upload using derived local path
+                val specificTag = "$TAG_LOCAL_TO_REMOTE-User"
+                var overallSuccess = false // Track overall success
+
+                try {
+                    var userToPush = user
+                    var uploadSuccess = true
+                    var cloudStorageUrl: String? = null
+
+                    // Derive the local profile picture file path
+                    val localFilePath = File(context.filesDir, "profile_picture_${user.id}.jpg").absolutePath
+                    val localFile = File(localFilePath)
+
+                    // Check if the local profile image file exists
+                    if (localFile.exists()) {
+                        Log.d(specificTag, "Uploading profile picture for user ${user.id} from local file: ${localFile.path}")
+                        // Upload image to Firebase Storage
+                        cloudStorageUrl = userRepository.uploadProfilePicture(user.id, localFile) // Use UserRepository for upload
+                        uploadSuccess = cloudStorageUrl != null
+
+                        if (uploadSuccess) {
+                            Log.d(specificTag, "Profile picture uploaded successfully for user ${user.id}. URL: $cloudStorageUrl")
+                            // Update the user object with the Cloud Storage URL
+                            userToPush = user.copy(profileImageUrl = cloudStorageUrl!!)
+                            // Do NOT delete the local file here, as per user requirement
+                        } else {
+                            Log.e(specificTag, "Failed to upload profile picture for user ${user.id}.")
+                            // If upload fails, the overall push fails.
+                            overallSuccess = false
+                        }
+                    }
+
+                    // If image upload was successful (or no image needed upload), push the user data to Firestore
+                    if (uploadSuccess) {
+                         val firestorePushSuccess = userRepository.pushUserToFirestore(userToPush.copy(lastModifiedAt = Timestamp.now())) // Update timestamp before pushing
+                         overallSuccess = firestorePushSuccess
+                         if (!firestorePushSuccess) {
+                             Log.e(specificTag, "Firestore push failed for user ${user.id}.")
+                         }
+                    }
+
+
+                } catch (e: Exception) {
+                    Log.e(specificTag, "Error during user profile picture upload or Firestore push for user ${user.id}.", e)
+                    overallSuccess = false // Indicate push failed
+                }
+                overallSuccess // Return overall success status
+            },
+            updateLocalAfterPush = { user, success -> // Modified lambda - no longer clears local path
+                val specificTag = "$TAG_LOCAL_TO_REMOTE-User"
+                if (success) {
+                    // Update the local user to set needsSync to false
+                    val updatedUser = user.copy(
+                        needsSync = false,
+                        lastModifiedAt = Timestamp.now() // Update timestamp locally after successful sync
+                    )
+                    db.userDao().upsertUser(updatedUser)
+                    Log.d(specificTag, "Successfully updated local User ${user.id} flags after Firestore push.")
+                } else {
+                    Log.e(specificTag, "Firestore push failed for User ${user.id}. Local 'needsSync' flag remains true for retry.")
+                }
+            },
+            getAllLocalNeedingSyncSnapshot =  { // This lambda calls .first() which is suspend
+                runBlocking { // Or ensure setupLocalEntityObserverAndInitialPush calls this from a coroutine
+                    householdGroupIdProvider.getHouseholdGroupId().first()?.let { householdGroupId ->
+                        db.userDao().getUsersRequiringSync(householdGroupId).first() // Get snapshot for initial push
+                    } ?: emptyList()
+                }
+            }
+        )
+    }
+
+    /**
+     * Pushes a locally modified User to Firestore using UserRepository.
+     */
+    private suspend fun pushUserToFirestore(user: com.homeostasis.app.data.model.User): Boolean {
+        val specificTag = "$TAG_LOCAL_TO_REMOTE-User"
+        return try {
+            Log.d(specificTag, "Pushing User ${user.id} to Firestore.")
+            // Use the pushUserToFirestore function in UserRepository
+            userRepository.pushUserToFirestore(user.copy(lastModifiedAt = Timestamp.now()))
+        } catch (e: Exception) {
+            Log.e(specificTag, "Error pushing User ${user.id} to Firestore.", e)
+            false
+        }
+    }
+
+    /**
+     * Updates the local User entity
+     */
+    private suspend fun updateLocalUserAfterPush(user: com.homeostasis.app.data.model.User, firestoreSuccess: Boolean) {
+        val specificTag = "$TAG_LOCAL_TO_REMOTE-User"
+        if (firestoreSuccess) {
+            // Update the local user to set needsSync to false
+            val updatedUser = user.copy(
+                needsSync = false,
+                lastModifiedAt = Timestamp.now() // Update timestamp locally after successful sync
+            )
+            db.userDao().upsertUser(updatedUser)
+            Log.d(specificTag, "Successfully updated local User ${user.id} flags after Firestore push.")
+        } else {
+            Log.e(specificTag, "Firestore push failed for User ${user.id}. Local 'needsSync' flag remains true for retry.")
+        }
+    }
+
+    suspend fun syncUsers() { // Marked suspend
+        Log.d(TAG, "syncUsers called - Setting up Remote User Listener & Initial Fetch.")
+        // setupFirestoreListenerAndInitialFetch is now suspend and handles householdGroupId internally
+        setupFirestoreListenerAndInitialFetch(
+            collectionPath = com.homeostasis.app.data.model.User.COLLECTION, // Use User.COLLECTION
+            modelClass = com.homeostasis.app.data.model.User::class.java, // Use User class
+            entityName = "User",
+            localUpsertOrDelete = { changeType, user ->
+                processRemoteUserChange(changeType, user, householdGroupIdProvider.getHouseholdGroupId().first()!!) // Pass householdGroupId
+            }
+        )
     }
 }

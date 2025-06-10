@@ -34,8 +34,8 @@
             android:id="@+id/action_tasks_to_task_detail"
             app:destination="@id/dialog_add_task" />
         <!--        <action-->
-<!--            android:id="@+id/action_tasks_to_task_create"-->
-<!--            app:destination="@id/navigation_task_create" />-->
+        <!--            android:id="@+id/action_tasks_to_task_create"-->
+        <!--            app:destination="@id/navigation_task_create" />-->
     </fragment>
 
     <fragment
@@ -58,7 +58,7 @@
 <!--            android:id="@+id/action_shopping_to_shopping_detail"-->
 <!--            app:destination="@id/navigation_shopping_detail" />-->
 <!--        <action-->
-<!--            android:id="@+id/action_shopping_to_shopping_create"-->
+<!--            android:id="@+id="action_shopping_to_shopping_create"-->
 <!--            app:destination="@id/navigation_shopping_create" />-->
 <!--    </fragment>-->
 
@@ -85,14 +85,13 @@
         android:label="@string/task_history_title"
         tools:layout="@layout/fragment_task_history" />
 
-<!--    &lt;!&ndash; Profile &ndash;&gt;-->
-<!--    <fragment-->
-<!--        android:id="@+id/navigation_profile"-->
-<!--        android:name="com.homeostasis.app.ui.profile.ProfileFragment"-->
-<!--        android:label="@string/profile_title"-->
-<!--        tools:layout="@layout/fragment_profile" />-->
+    <!-- Profile -->
+    <fragment
+        android:id="@+id/navigation_profile"
+        android:name="com.homeostasis.app.ui.profile.ProfileSettingsFragment"
+        android:label="@string/profile_title"
+        tools:layout="@layout/fragment_profile_settings" />
 
-    
         <!-- Household Group -->
         <fragment
             android:id="@+id/navigation_household_group"
@@ -111,17 +110,17 @@
                 app:destination="@id/navigation_household_group" />
         </fragment>
 
-<!--    &lt;!&ndash; Categories &ndash;&gt;-->
+<!--    <!&ndash; Categories &ndash;>-->
 <!--    <fragment-->
 <!--        android:id="@+id/navigation_categories"-->
 <!--        android:name="com.homeostasis.app.ui.tasks.CategoriesFragment"-->
 <!--        android:label="@string/categories_title"-->
 <!--        tools:layout="@layout/fragment_categories">-->
 <!--        <action-->
-<!--            android:id="@+id/action_categories_to_category_create"-->
+<!--            android:id="@+id="action_categories_to_category_create"-->
 <!--            app:destination="@id/navigation_category_create" />-->
 <!--        <action-->
-<!--            android:id="@+id/action_categories_to_category_edit"-->
+<!--            android:id="@+id="action_categories_to_category_edit"-->
 <!--            app:destination="@id/navigation_category_edit" />-->
 <!--    </fragment>-->
 

@@ -33,7 +33,15 @@ data class User(
     val resetCount: Int = 0,
     
     @PropertyName("householdGroupId")
-    val householdGroupId: String = ""
+    val householdGroupId: String = "",
+
+    var needsSync: Boolean = false,         // Default to false, set to true when local changes occur
+
+    var isDeletedLocally: Boolean = false,
+
+    @PropertyName("lastModifiedAt") // Keep PropertyName for Firestore compatibility
+    val lastModifiedAt: Timestamp = Timestamp.now(),
+
 ) {
     // Empty constructor for Firestore
     constructor() : this(
@@ -44,7 +52,8 @@ data class User(
         lastActive = Timestamp.now(),
         lastResetScore = 0,
         resetCount = 0,
-        householdGroupId = ""
+        householdGroupId = "",
+        lastModifiedAt = Timestamp.now()
     )
     
     companion object {

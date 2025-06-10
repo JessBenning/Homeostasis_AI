@@ -4,36 +4,46 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.UserProfileChangeRequest
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.Timestamp // Import Timestamp
 import com.homeostasis.app.data.model.User
+import com.homeostasis.app.data.UserDao // Import UserDao
+import com.homeostasis.app.data.HouseholdGroupIdProvider // Import HouseholdGroupIdProvider
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.first // Import first
+import javax.inject.Inject
+import javax.inject.Singleton
 
 /**
  * Repository for user-related operations.
  */
-class UserRepository : FirebaseRepository<User>() {
-    
+class UserRepository @Inject constructor(
+    private val firebaseStorageRepository: FirebaseStorageRepository, // Inject FirebaseStorageRepository
+    private val userDao: UserDao, // Inject UserDao
+    private val householdGroupIdProvider: HouseholdGroupIdProvider // Inject HouseholdGroupIdProvider
+) : FirebaseRepository<User>() {
+
     override val collectionName: String = User.COLLECTION
-    
+
     private val auth: FirebaseAuth by lazy {
         FirebaseAuth.getInstance()
     }
-    
+
     /**
      * Get the current authenticated user.
      */
     fun getCurrentUser(): FirebaseUser? {
         return auth.currentUser
     }
-    
+
     /**
      * Get the current authenticated user's ID.
      */
     fun getCurrentUserId(): String? {
         return auth.currentUser?.uid
     }
-    
+
     /**
      * Register a new user with email and password.
      */
@@ -41,14 +51,14 @@ class UserRepository : FirebaseRepository<User>() {
         return try {
             val authResult = auth.createUserWithEmailAndPassword(email, password).await()
             val firebaseUser = authResult.user
-            
+
             // Update display name
             val profileUpdates = UserProfileChangeRequest.Builder()
                 .setDisplayName(name)
                 .build()
-            
+
             firebaseUser?.updateProfile(profileUpdates)?.await()
-            
+
             // Create user document in Firestore
             firebaseUser?.let {
                 val user = User(
@@ -57,13 +67,13 @@ class UserRepository : FirebaseRepository<User>() {
                 )
                 set(it.uid, user)
             }
-            
+
             Result.success(firebaseUser!!)
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
-    
+
     /**
      * Sign in with email and password.
      */
@@ -75,14 +85,14 @@ class UserRepository : FirebaseRepository<User>() {
             Result.failure(e)
         }
     }
-    
+
     /**
      * Sign out the current user.
      */
     fun signOut() {
         auth.signOut()
     }
-    
+
     /**
      * Send password reset email.
      */
@@ -94,9 +104,10 @@ class UserRepository : FirebaseRepository<User>() {
             Result.failure(e)
         }
     }
-    
+
     /**
      * Update user profile.
+     * This function is primarily for updating Firestore directly, used by sync manager.
      */
     suspend fun updateUserProfile(userId: String, updates: Map<String, Any>): Result<Unit> {
         return try {
@@ -106,7 +117,7 @@ class UserRepository : FirebaseRepository<User>() {
             Result.failure(e)
         }
     }
-    
+
     /**
      * Get user by ID.
      */
@@ -122,7 +133,7 @@ class UserRepository : FirebaseRepository<User>() {
             Result.failure(e)
         }
     }
-    
+
     /**
      * Get all users.
      */
@@ -134,7 +145,7 @@ class UserRepository : FirebaseRepository<User>() {
             Result.failure(e)
         }
     }
-    
+
     /**
      * Get all users as a Flow.
      */
@@ -147,6 +158,59 @@ class UserRepository : FirebaseRepository<User>() {
             emit(Result.failure(e))
         }
     }
-    
-    override fun getModelClass(): Class<User> = User::class.java
+
+    /**
+     * Pushes a locally modified user to Firestore.
+     * This is called by the sync manager.
+     *
+     * @param user The user object to push.
+     * @return True if push was successful, false otherwise.
+     */
+    suspend fun pushUserToFirestore(user: User): Boolean {
+        return try {
+            // Use the existing set function which handles create/update
+            set(user.id, user)
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Uploads a profile picture to Firebase Storage.
+     *
+     * @param userId The ID of the user the picture belongs to.
+     * @param localFile The local file containing the profile picture.
+     * @return The download URL of the uploaded picture, or null if the upload failed.
+     */
+    suspend fun uploadProfilePicture(userId: String, localFile: java.io.File): String? {
+        return firebaseStorageRepository.uploadFile(
+            file = localFile,
+            path = "profile_pictures/$userId", // Storage path
+            fileName = "profile.jpg" // Fixed filename for the profile picture
+        )
+    }
+/**
+ * Updates the user's score.
+ *
+ * @param userId The ID of the user whose score to update.
+ * @param scoreChange The amount to change the score by (positive or negative).
+ * @return True if the update was successful, false otherwise.
+ */
+//suspend fun updateUserScore(userId: String, scoreChange: Int): Boolean {
+//    return try {
+//        val userResult = getUserById(userId) // Assuming getUserById is reliable
+//        if (userResult.isSuccess) {
+//            val user = userResult.getOrThrow()
+//            val updatedUser = user.copy(score = user.score + scoreChange) // Assuming User has a 'score' field
+//            pushUserToFirestore(updatedUser) // Use the existing push function
+//        } else {
+//            false // User not found or error fetching
+//        }
+//    } catch (e: Exception) {
+//        false // Error during update
+//    }
+//}
+
+override fun getModelClass(): Class<User> = User::class.java
 }
