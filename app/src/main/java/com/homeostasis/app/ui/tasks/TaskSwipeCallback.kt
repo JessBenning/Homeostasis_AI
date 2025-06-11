@@ -158,6 +158,36 @@ class TaskSwipeCallback(
 
         taskActionsContainer.visibility = View.VISIBLE
 
+        taskActionsContainer.post {
+            val actionsContainerActualWidth = taskActionsContainer.width
+            val itemViewWidth = itemView.width
+
+            android.util.Log.d("TaskSwipeCallback", "Position: $position")
+            android.util.Log.d("TaskSwipeCallback", "itemView.width: $itemViewWidth")
+            android.util.Log.d("TaskSwipeCallback", "taskActionsContainer.width (after post): $actionsContainerActualWidth")
+            android.util.Log.d("TaskSwipeCallback", "actionRevealSlideDistanceFactor: $actionRevealSlideDistanceFactor")
+
+            val calculatedSlideWidth: Float = if (actionsContainerActualWidth > 0) {
+                actionsContainerActualWidth.toFloat()
+            } else {
+                android.util.Log.w("TaskSwipeCallback", "taskActionsContainer.width is 0 or less. Using fallback.")
+                (itemViewWidth * actionRevealSlideDistanceFactor)
+            }
+            android.util.Log.d("TaskSwipeCallback", "Calculated Slide Width for animation: $calculatedSlideWidth")
+
+            val slideDistance = -calculatedSlideWidth
+
+            taskContentContainer.animate()
+                .translationX(slideDistance)
+                .setDuration(200)
+                .start()
+
+            // Set these after the animation starts or configuration is done
+            currentlyShownItemView = itemView
+            currentlyShownPosition = position
+            isShowingActions = true
+        }
+
         editButton.setOnClickListener {
             onEditClick(position)
             hideActions(itemView)
@@ -174,20 +204,20 @@ class TaskSwipeCallback(
         // Ensure this calculation results in a Float if any part is a Float.
         // itemView.width is Int, actionRevealSlideDistanceFactor is Float.
         // taskActionsContainer.width is Int.
-        val calculatedSlideWidth: Float = taskActionsContainer.width.takeIf { it > 0 }?.toFloat()
-            ?: (itemView.width * actionRevealSlideDistanceFactor)
-
-        // Now, apply negation to the Float variable
-        val slideDistance = -calculatedSlideWidth
-
-        taskContentContainer.animate()
-            .translationX(slideDistance)
-            .setDuration(200)
-            .start()
-
-        currentlyShownItemView = itemView
-        currentlyShownPosition = position
-        isShowingActions = true
+//        val calculatedSlideWidth: Float = taskActionsContainer.width.takeIf { it > 0 }?.toFloat()
+//            ?: (itemView.width * actionRevealSlideDistanceFactor)
+//
+//        // Now, apply negation to the Float variable
+//        val slideDistance = -calculatedSlideWidth
+//
+//        taskContentContainer.animate()
+//            .translationX(slideDistance)
+//            .setDuration(200)
+//            .start()
+//
+//        currentlyShownItemView = itemView
+//        currentlyShownPosition = position
+//        isShowingActions = true
     }
 
     fun hideActions(itemViewToHide: View) {

@@ -134,35 +134,31 @@ class TaskListViewModel @Inject constructor(
         }
     }
 
-    fun undoTaskCompletion(taskHistoryId: String) {
-        viewModelScope.launch {
-            try {
-                // 1. Fetch the TaskHistory record to get details (like points and taskId) before deleting
-                val householdGroupId = householdGroupIdProvider.getHouseholdGroupId().first() ?: HouseholdGroupIdProvider.DEFAULT_HOUSEHOLD_GROUP_ID
-                val taskHistory = taskHistoryDao.getTaskHistoryById(taskHistoryId, householdGroupId)
 
-                if (taskHistory != null) {
-                    // 2. Mark the TaskHistory record as deleted locally
-                    taskHistoryDao.markTaskHistoryAsDeletedLocally(taskHistoryId, householdGroupId)
-                    Log.d(TAG, "SUCCESS: TaskHistory entry marked as deleted locally. ID: $taskHistoryId")
+    suspend fun undoTaskCompletionSuspend(taskHistoryId: String): Boolean { // Changed to suspend and return Boolean
+        return try {
+            val householdGroupId = householdGroupIdProvider.getHouseholdGroupId().first() ?: HouseholdGroupIdProvider.DEFAULT_HOUSEHOLD_GROUP_ID
+            val taskHistory = taskHistoryDao.getTaskHistoryById(taskHistoryId, householdGroupId)
 
-                    // 3. Update user score
-//                    val userId = userRepository.getCurrentUserId()
-//                    if (userId != null) {
-//                        userRepository.updateUserScore(userId, -taskHistory.pointValue)
-//                        Log.d(TAG, "SUCCESS: Updated user score by subtracting ${taskHistory.pointValue} points.")
-//                    } else {
-//                        Log.e(TAG, "ERROR: Could not get current user ID to update score.")
-//                    }
-
-                } else {
+            if (taskHistory != null && !taskHistory.isDeleted && !taskHistory.isDeletedLocally) {
+                taskHistoryDao.markTaskHistoryAsDeletedLocally(taskHistoryId, householdGroupId)
+                Log.d(TAG, "SUCCESS: TaskHistory entry marked as deleted locally. ID: $taskHistoryId")
+                // TODO: Handle related data updates like score if necessary
+                true
+            } else {
+                if (taskHistory == null) {
                     Log.e(TAG, "ERROR: Could not find TaskHistory entry with ID $taskHistoryId to undo.")
+                } else {
+                    Log.w(TAG, "INFO: TaskHistory entry with ID $taskHistoryId was already deleted or not undoable. No action taken.")
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "ERROR undoing TaskHistory completion: ${e.message}", e)
+                false
             }
+        } catch (e: Exception) {
+            Log.e(TAG, "ERROR undoing TaskHistory completion: ${e.message}", e)
+            false
         }
     }
+
 
     suspend fun getLatestTaskHistoryIdForTaskAndUser(taskId: String, userId: String): String? {
         val householdGroupId = householdGroupIdProvider.getHouseholdGroupId().first() ?: HouseholdGroupIdProvider.DEFAULT_HOUSEHOLD_GROUP_ID

@@ -18,14 +18,16 @@
         <!-- This view will be revealed when the foreground content slides -->
         <LinearLayout
             android:id="@+id/task_actions_container"
-            android:layout_width="match_parent"
+            android:layout_width="wrap_content"
             android:layout_height="match_parent"
+            android:layout_gravity="end"
             android:background="@android:color/holo_blue_dark"
-            android:gravity="end|center_vertical"
+            android:gravity="center_vertical"
             android:orientation="horizontal"
+            android:visibility="gone"
             android:paddingStart="@dimen/spacing_medium"
             android:paddingEnd="@dimen/spacing_medium">
-            <!-- Adjust padding as needed for icon spacing -->
+
 
             <ImageView
                 android:id="@+id/edit_icon"
@@ -61,13 +63,14 @@
                 android:id="@+id/completion_counter"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
                 android:background="@drawable/bg_completion_counter"
                 android:textAppearance="?attr/textAppearanceCaption"
                 android:textColor="@android:color/white"
                 android:textStyle="bold"
                 android:visibility="gone"
+                app:layout_constraintBottom_toTopOf="@+id/task_options_menu"
                 app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintTop_toTopOf="parent"
                 tools:text="2"
                 tools:visibility="visible" />
 

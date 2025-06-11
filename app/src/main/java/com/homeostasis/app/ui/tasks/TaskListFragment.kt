@@ -318,45 +318,57 @@ class TaskListFragment : Fragment(), AddModTaskDialogFragment.AddModTaskListener
 
     private fun undoTaskCompletion(position: Int) {
         // Get the task from the list
-        val task = viewModel.tasks.value[position]
+        val task = viewModel.tasks.value.getOrNull(position) ?: return // Safeguard
+        val currentSessionCompletions = taskAdapter.getSessionCompletionCount(task.id)
 
-        // Launch a coroutine to call the suspend function in the ViewModel
-        lifecycleScope.launch {
-            // Get the current user ID
-            val currentUserId = userRepository.getCurrentUserId()
+        if (currentSessionCompletions > 0) {
+            // There's a session completion to undo from the UI perspective
+            taskAdapter.decrementCompletionCount(task.id) // This will update the UI checkmark/counter
 
-            if (currentUserId != null) {
-                // Get the ID of the most recent task history record for this task and user
+            // Now, proceed to undo the LATEST persisted completion in the database
+            lifecycleScope.launch {
+                val currentUserId = userRepository.getCurrentUserId()
+                if (currentUserId == null) {
+                    showSnackbar("Error: User not logged in. Cannot undo task completion.")
+                    // Optional: If user isn't logged in, but we "undid" a session count,
+                    // we might want to increment it back if the DB operation fails.
+                    // However, decrementing first gives immediate UI feedback.
+                    // taskAdapter.incrementCompletionCount(task.id) // Revert UI if DB undo fails due to no user
+                    return@launch
+                }
+
                 val latestTaskHistoryId = viewModel.getLatestTaskHistoryIdForTaskAndUser(task.id, currentUserId)
 
                 if (latestTaskHistoryId != null) {
-                    // Call the ViewModel function to undo the task completion
-                    viewModel.undoTaskCompletion(latestTaskHistoryId)
-
-                    // Decrement the completion count in the adapter for immediate UI update
-                    // The ViewModel will also handle the task's completion count update which will eventually
-                    // be reflected via the observed tasks Flow, but this provides
-                    // a more immediate visual feedback. Consider removing this if
-                    // relying solely on the Flow for UI updates.
-                    taskAdapter.decrementCompletionCount(task.id)
-
-                    // Show a snackbar
-                    showUndoCompletionSnackbar(task)
-
-                    // Remove the redundant score update calls
-                    // updateUserScore(-task.points) // Remove this
-                    // updateUserScore(-task.points) // Remove this
-
+                    val undoSuccessful = viewModel.undoTaskCompletionSuspend(latestTaskHistoryId)
+                    if (undoSuccessful) {
+                        showUndoCompletionSnackbar(task)
+                        // UI already updated by taskAdapter.decrementCompletionCount
+                    } else {
+                        // DB undo failed (e.g., history record already deleted, or some other issue)
+                        // Since we already decremented the session count, we should revert that UI change
+                        // if the DB operation wasn't successful, to keep UI consistent with what's undoable.
+                        taskAdapter.incrementCompletionCount(task.id) // Revert UI change
+                        showSnackbar("Failed to undo the last recorded completion.") // More specific
+                    }
                 } else {
-                    showCantUndoSnackbar()
+                    // No persisted completion found in DB to match the UI session undo.
+                    // This is an interesting state: UI showed it was completed in session, but DB has nothing.
+                    // This could happen if completions were only in session and app was restarted before DB sync.
+                    // Or if all DB completions were already undone through other means.
+                    // Revert the UI session decrement as there's no corresponding DB action.
+                    taskAdapter.incrementCompletionCount(task.id) // Revert UI change
+                    showSnackbar("No recorded completion found to undo.")
                 }
-            } else {
-                // Handle case where user is not logged in
-                showSnackbar("Error: User not logged in. Cannot undo task completion.")
             }
-            // Update the UI (this might be redundant if relying on Flow)
-            // Update the UI (this might be redundant if relying on Flow)
-            // taskAdapter.notifyItemChanged(position) // Consider if this is still needed
+        } else {
+            // No completions in the current session for this task.
+            // The swipe-left-to-undo shouldn't do anything or should indicate it can't be done.
+           // showCantUndoSnackbar() // "Nothing to undo for this task in the current session."
+            // We also need to tell the ItemTouchHelper to reset the item's swipe state
+            // because the swipe was initiated but we determined no action should be taken.
+            showSnackbar("You need to complete the task before it can be undone.")
+            taskAdapter.notifyItemChanged(position) // This resets the swipe
         }
     }
 
@@ -383,13 +395,7 @@ class TaskListFragment : Fragment(), AddModTaskDialogFragment.AddModTaskListener
         ).show()
     }
 
-    private fun showCantUndoSnackbar() {
-        Snackbar.make(
-            requireView(),
-            "Can't undo, you need to complete the task first",
-            Snackbar.LENGTH_LONG
-        ).show()
-    }
+
 
     private fun showSnackbar(message: String) {
         Snackbar.make(requireView(), message, Snackbar.LENGTH_SHORT).show()

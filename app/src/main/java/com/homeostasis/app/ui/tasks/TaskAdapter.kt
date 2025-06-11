@@ -57,6 +57,8 @@ class TaskAdapter(
 
         return currentSize
     }
+
+
     
     /**
      * Resets the appearance of all task items to their default state.
@@ -76,17 +78,18 @@ class TaskAdapter(
     }
 
 
-    
-    //        private fun hasTaskHistory(task: Task): Boolean {
-    //            return runBlocking {
-    //                this@TaskAdapter.getTaskHistoryByTaskId(task.id).isNotEmpty()
-    //            }
-    //        }
+
+    // Method to get the current session completion count for a task
+    fun getSessionCompletionCount(taskId: String): Int {
+        return sessionCompletionCounts.getOrDefault(taskId, 0)
+    }
 
     // Method to be called when a task is marked as complete by the user
     fun incrementCompletionCount(taskId: String) {
         val currentCount = sessionCompletionCounts.getOrDefault(taskId, 0)
         sessionCompletionCounts[taskId] = currentCount + 1
+        Log.d("TaskAdapter", "Incremented session count for $taskId to ${sessionCompletionCounts[taskId]}")
+
 
         // Find the position of the task to notify item change for UI update
         val position = tasks.indexOfFirst { it.id == taskId }
@@ -95,19 +98,22 @@ class TaskAdapter(
         }
     }
 
-    // Method to be called when a task is marked as complete by the user
+    // Method to be called when a task is marked as "uncompleted" by the user in the session
+    // Returns true if count was successfully decremented, false if it was already 0.
     fun decrementCompletionCount(taskId: String): Boolean {
         val currentCount = sessionCompletionCounts.getOrDefault(taskId, 0)
-        if (currentCount > 0)
-            sessionCompletionCounts[taskId] = currentCount -1
-        else return false
+        if (currentCount > 0) {
+            sessionCompletionCounts[taskId] = currentCount - 1
+            Log.d("TaskAdapter", "Decremented session count for $taskId to ${sessionCompletionCounts[taskId]}")
 
-        // Find the position of the task to notify item change for UI update
-        val position = tasks.indexOfFirst { it.id == taskId }
-        if (position != -1) {
-            notifyItemChanged(position)
+            val position = tasks.indexOfFirst { it.id == taskId }
+            if (position != -1) {
+                notifyItemChanged(position)
+            }
+            return true
         }
-        return true
+        Log.d("TaskAdapter", "Session count for $taskId is already 0, cannot decrement.")
+        return false
     }
 
     fun resetAllCompletionCounts() {
@@ -168,6 +174,7 @@ class TaskAdapter(
             optionsMenuButton.setOnClickListener {
                // Call a function in TaskSwipeCallback to toggle actions for this item
                taskSwipeCallback.toggleActionsForItem(position) // Use the position parameter
+               true // Consume the click event
             }
             
         }
