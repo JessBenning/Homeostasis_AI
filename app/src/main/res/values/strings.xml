@@ -9,6 +9,7 @@
     <string name="ok">OK</string>
     <string name="undo">Undo</string>
     
+    
     <!-- Navigation -->
     <string name="nav_tasks">Tasks</string>
     <string name="nav_shopping">Shop</string>
@@ -26,6 +27,7 @@
     <string name="task_points_hint">Points</string>
     <string name="task_category_hint">Category</string>
     <string name="task_completed">Task Completed!</string>
+    <string name="swipe_completed">Completed</string>
     <string name="task_points_added">%1$d points added to your score!</string>
     <string name="task_last_done">Last done: %1$s by %2$s</string>
     <string name="task_never_done">Last done: Never</string>

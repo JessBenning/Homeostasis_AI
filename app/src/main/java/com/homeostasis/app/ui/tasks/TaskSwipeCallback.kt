@@ -98,15 +98,44 @@ class TaskSwipeCallback(
             return
         }
 
+        // Draw background and text for swipe actions
         if (!(isShowingActions && viewHolder.adapterPosition == currentlyShownPosition)) {
+            val text: String
+            val textColor: Int
+            val intrinsicWidth: Int // Placeholder for icon width if icons were used
+
             when {
-                dX > 0 -> {
+                dX > 0 -> { // Swiping right (Complete)
+                    text = context.getString(R.string.swipe_completed) // Use string resource
+                    textColor = ContextCompat.getColor(context, android.R.color.white) // White text
                     completeBackground.setBounds(itemView.left, itemView.top, itemView.left + dX.toInt(), itemView.bottom)
                     completeBackground.draw(c)
+
+                    // Draw text
+                    val textPaint = Paint().apply {
+                        color = textColor
+                        textSize = 48f // Adjust text size as needed
+                        textAlign = Paint.Align.LEFT
+                    }
+                    val textX = itemView.left + 48 // Adjust padding as needed
+                    val textY = itemView.top + (itemView.bottom - itemView.top) / 2f + textPaint.textSize / 2f
+                    c.drawText(text, textX.toFloat(), textY.toFloat(), textPaint)
                 }
-                dX < 0 -> {
+                dX < 0 -> { // Swiping left (Undo)
+                    text = context.getString(R.string.undo) // Use string resource
+                    textColor = ContextCompat.getColor(context, android.R.color.white) // White text
                     undoBackground.setBounds(itemView.right + dX.toInt(), itemView.top, itemView.right, itemView.bottom)
                     undoBackground.draw(c)
+
+                    // Draw text
+                    val textPaint = Paint().apply {
+                        color = textColor
+                        textSize = 48f // Adjust text size as needed
+                        textAlign = Paint.Align.RIGHT
+                    }
+                    val textX = itemView.right - 48 // Adjust padding as needed
+                    val textY = itemView.top + (itemView.bottom - itemView.top) / 2f + textPaint.textSize / 2f
+                    c.drawText(text, textX.toFloat(), textY.toFloat(), textPaint)
                 }
             }
         }
