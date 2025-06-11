@@ -73,8 +73,8 @@ class TaskListFragment : Fragment(), AddModTaskDialogFragment.AddModTaskListener
             showAddTaskDialog()
         }
 
-        taskAdapter = TaskAdapter(emptyList(), this)
-        recyclerView.adapter = taskAdapter
+        // taskAdapter = TaskAdapter(emptyList(), this) // Removed: Initialized in setupRecyclerView instead
+        // recyclerView.adapter = taskAdapter // Removed: Set in setupRecyclerView instead
 
 //        viewModel.tasks.observe(viewLifecycleOwner) { tasks ->
 //            taskAdapter.setTasks(tasks)
@@ -128,11 +128,7 @@ class TaskListFragment : Fragment(), AddModTaskDialogFragment.AddModTaskListener
     }
 
     private fun setupRecyclerView() {
-        taskAdapter = TaskAdapter(viewModel.tasks.value, this)
-        recyclerView.layoutManager = LinearLayoutManager(context)
-        recyclerView.adapter = taskAdapter
-
-        // Set up swipe gestures and long press
+        // Set up swipe gestures and long press FIRST
         swipeCallback = TaskSwipeCallback(
             requireContext(),
             onSwipeRight = { position -> completeTask(position) },
@@ -144,9 +140,18 @@ class TaskListFragment : Fragment(), AddModTaskDialogFragment.AddModTaskListener
         itemTouchHelper = ItemTouchHelper(swipeCallback)
         itemTouchHelper.attachToRecyclerView(recyclerView)
 
+        // Attach the RecyclerView to the swipe callback
+        swipeCallback.attachToRecyclerView(recyclerView) // Add this line
+
         // Attach gesture detector for long press
-        swipeCallback.attachGestureDetector(recyclerView)
+        // swipeCallback.attachGestureDetector(recyclerView) // This was commented out previously
+
+        // Then Set up RecyclerView and pass the initialized swipeCallback
+        taskAdapter = TaskAdapter(viewModel.tasks.value, this, swipeCallback) // Pass swipeCallback
+        recyclerView.layoutManager = LinearLayoutManager(context)
+        recyclerView.adapter = taskAdapter
     }
+
 
     private fun showAddTaskDialog() {
         val dialogFragment = AddModTaskDialogFragment.newInstance()

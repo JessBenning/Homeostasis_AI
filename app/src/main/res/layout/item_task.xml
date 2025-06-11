@@ -61,7 +61,6 @@
                 android:id="@+id/completion_counter"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginEnd="@dimen/spacing_small"
                 android:background="@drawable/bg_completion_counter"
                 android:textAppearance="?attr/textAppearanceCaption"
                 android:textColor="@android:color/white"
@@ -73,25 +72,12 @@
                 tools:visibility="visible" />
 
             <TextView
-                android:id="@+id/task_description"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_small"
-                android:rotationX="2"
-                android:textAppearance="?attr/textAppearanceBody2"
-                app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@+id/task_title"
-                tools:text="Wash dishes, clean counters, and sweep floor" />
-
-            <TextView
                 android:id="@+id/task_title"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="20dp"
                 android:textAppearance="@style/TextAppearance.Homeostasis.Headline3"
                 android:textStyle="bold"
-                app:layout_constraintStart_toEndOf="@+id/task_points"
+                app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintTop_toTopOf="parent"
                 tools:text="Clean the kitchen" />
 
@@ -99,34 +85,48 @@
                 android:id="@+id/task_last_done"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_small"
+                android:layout_marginTop="8dp"
+                android:layout_marginEnd="16dp"
                 android:textAppearance="@style/TextAppearance.Homeostasis.Caption"
                 android:textStyle="italic"
-                app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintTop_toBottomOf="@+id/task_description"
+                app:layout_constraintEnd_toStartOf="@+id/task_options_menu"
+                app:layout_constraintTop_toBottomOf="@+id/task_title"
                 tools:text="Last done: Yesterday by John" />
 
             <TextView
                 android:id="@+id/task_points"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
                 android:background="@android:color/holo_green_light"
                 android:paddingStart="@dimen/spacing_small"
                 android:paddingTop="2dp"
                 android:paddingEnd="@dimen/spacing_small"
                 android:paddingBottom="2dp"
-                android:textAppearance="?attr/textAppearanceBody2"
-                android:textColor="@android:color/white"
+                android:textAppearance="@style/TextAppearance.Homeostasis.Caption"
+                android:textColor="@android:color/black"
                 android:textStyle="bold"
                 app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintTop_toBottomOf="@+id/task_title"
                 tools:text="10 pts" />
+
+            <ImageButton
+                android:id="@+id/task_options_menu"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Task Options"
+                android:src="@drawable/ic_overflow_menu"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintEnd_toEndOf="parent" />
+
 
             <TextView
                 android:id="@+id/task_category"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_small"
+                android:layout_marginStart="8dp"
+                android:layout_marginTop="8dp"
                 android:background="@android:color/holo_blue_light"
                 android:paddingStart="@dimen/spacing_small"
                 android:paddingTop="2dp"
@@ -134,8 +134,8 @@
                 android:paddingBottom="2dp"
                 android:textAppearance="?attr/textAppearanceCaption"
                 android:textColor="@android:color/white"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@+id/task_description"
+                app:layout_constraintStart_toEndOf="@+id/task_points"
+                app:layout_constraintTop_toBottomOf="@+id/task_title"
                 tools:text="Household" />
         </androidx.constraintlayout.widget.ConstraintLayout>
 
@@ -150,3 +150,9 @@
 
     </FrameLayout>
 </com.google.android.material.card.MaterialCardView>
+
+
+
+
+
+

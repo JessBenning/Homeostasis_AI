@@ -58,7 +58,7 @@ class AddModTaskDialogFragment : DialogFragment() {
         // Initialize UI components
         dialogTitle = view.findViewById(R.id.dialog_title)
         titleEditText = view.findViewById(R.id.task_title_edit_text)
-        descriptionEditText = view.findViewById(R.id.task_description_edit_text)
+       // descriptionEditText = view.findViewById(R.id.task_description_edit_text)
         pointsEditText = view.findViewById(R.id.task_points_edit_text)
         categoryDropdown = view.findViewById(R.id.task_category_dropdown)
         saveButton = view.findViewById(R.id.save_button)
@@ -100,7 +100,7 @@ class AddModTaskDialogFragment : DialogFragment() {
         // Populate fields if editing an existing task
         if (isEditMode && existingTask != null) {
             titleEditText.setText(existingTask!!.title)
-            descriptionEditText.setText(existingTask!!.description)
+      //      descriptionEditText.setText(existingTask!!.description)
             pointsEditText.setText(existingTask!!.points.toString())
             categoryDropdown.setText(existingTask!!.categoryId)
         }
@@ -131,7 +131,7 @@ class AddModTaskDialogFragment : DialogFragment() {
 
     private fun saveNewTask() {
         val title = titleEditText.text.toString().trim()
-        val description = descriptionEditText.text.toString().trim()
+    //    val description = descriptionEditText.text.toString().trim()
         val points = pointsEditText.text.toString().toIntOrNull() ?: 0
         val category = categoryDropdown.text.toString().trim()
 
@@ -139,7 +139,7 @@ class AddModTaskDialogFragment : DialogFragment() {
         val task = Task(
             id = java.util.UUID.randomUUID().toString(),
             title = title,
-            description = description,
+            description = "",//description,
             points = points,
             categoryId = category, // Using category name as ID for now
             createdBy = "current_user", // In a real app, this would come from authentication
@@ -162,7 +162,7 @@ class AddModTaskDialogFragment : DialogFragment() {
 
     private fun updateExistingTask() {
         val title = titleEditText.text.toString().trim()
-        val description = descriptionEditText.text.toString().trim()
+   //     val description = descriptionEditText.text.toString().trim()
         val points = pointsEditText.text.toString().toIntOrNull() ?: 0
         val category = categoryDropdown.text.toString().trim()
 
@@ -175,7 +175,7 @@ class AddModTaskDialogFragment : DialogFragment() {
         // Create an updated Task object, preserving the original ID and other fields
         val updatedTask = existingTask!!.copy(
             title = title,
-            description = description,
+            description = "",//description,
             points = points,
             categoryId = category,
             lastModifiedAt = Timestamp.now()

@@ -5,8 +5,7 @@ import androidx.room.PrimaryKey
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.DocumentId
 import com.google.firebase.firestore.PropertyName
-
-
+import com.google.firebase.firestore.Exclude // Import Exclude
 
 /**
  * Data class representing a task in the Homeostasis app.
@@ -15,39 +14,48 @@ import com.google.firebase.firestore.PropertyName
 data class Task(
     @PrimaryKey
     @DocumentId
-    val id: String = "",
+    var id: String = "", // Typically val is fine if ID is immutable after creation, but var is safer for Firestore if it ever needs to set it.
 
-    val title: String = "",
+    var title: String = "",
 
-    val description: String = "",
+    var description: String = "", // Keep as var if editable
 
-    val points: Int = 0,
+    var points: Int = 0, // Keep as var if editable
 
-    @PropertyName("categoryId")
-    val categoryId: String = "",
+    @get:PropertyName("categoryId") @set:PropertyName("categoryId") // Explicit for clarity with var
+    var categoryId: String = "",
 
-    @PropertyName("createdBy")
-    val createdBy: String = "",
+    @get:PropertyName("createdBy") @set:PropertyName("createdBy")
+    var createdBy: String = "",
 
-    @PropertyName("isDeleted")
-    val isDeleted: Boolean = false,
+    @get:PropertyName("isDeleted") @set:PropertyName("isDeleted")
+    var isDeleted: Boolean = false, // CHANGED TO VAR
 
-    @PropertyName("createdAt")
-    val createdAt: Timestamp = Timestamp.now(),
+    @get:PropertyName("createdAt") @set:PropertyName("createdAt")
+    var createdAt: Timestamp? = Timestamp.now(), // CHANGED TO VAR and Nullable
 
-    @PropertyName("lastModifiedAt")
-    val lastModifiedAt: Timestamp = Timestamp.now(),
+    @get:PropertyName("lastModifiedAt") @set:PropertyName("lastModifiedAt")
+    var lastModifiedAt: Timestamp? = Timestamp.now(), // CHANGED TO VAR and Nullable
 
-    var needsSync: Boolean = false,         // Default to false, set to true when local changes occur
+    @get:PropertyName("isCompleted") @set:PropertyName("isCompleted")
+    var isCompleted: Boolean = false, // CHANGED TO VAR
 
-    var isDeletedLocally: Boolean = false,
+    @get:PropertyName("householdGroupId") @set:PropertyName("householdGroupId")
+    var householdGroupId: String = "",
 
-    @PropertyName("isCompleted") // Good practice for Firestore
-    val isCompleted: Boolean = false,
-    @PropertyName("householdGroupId")
-    val householdGroupId: String = "",
+    // --- Local-only fields ---
+    // These should NOT be persisted to Firestore.
+    // Use @Exclude for Firestore, and potentially @Ignore for Room if not stored.
+    // If they are part of the primary constructor and you use a no-arg constructor for Firestore,
+    // they might get default values written if not excluded.
+    @get:Exclude @set:Exclude // Exclude from Firestore
+    var needsSync: Boolean = false,
+
+    @get:Exclude @set:Exclude // Exclude from Firestore
+    var isDeletedLocally: Boolean = false
 ) {
-    // Empty constructor for Firestore
+    // Empty constructor for Firestore.
+    // Firestore will use this and then set properties using setters (if they are var) or direct field access.
     constructor() : this(
         id = "",
         title = "",
@@ -56,14 +64,15 @@ data class Task(
         categoryId = "",
         createdBy = "",
         isDeleted = false,
-        createdAt = Timestamp.now(),
-        lastModifiedAt = Timestamp.now(),
-        needsSync = false,
-        householdGroupId = ""
+        createdAt = Timestamp.now(), // Default for new local object
+        lastModifiedAt = Timestamp.now(), // Default for new local object
+        isCompleted = false,
+        householdGroupId = "",
+        needsSync = false,         // Default for local-only field
+        isDeletedLocally = false   // Default for local-only field
     )
 
     companion object {
         const val COLLECTION = "tasks"
     }
 }
-

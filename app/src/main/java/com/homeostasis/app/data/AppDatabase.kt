@@ -7,6 +7,7 @@ import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import android.content.Context
+import android.util.Log
 import androidx.room.Room
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
@@ -14,7 +15,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 //TODO: change exportSchema to true for production
 @Database(
     entities = [Task::class, com.homeostasis.app.data.model.HouseholdGroup::class, com.homeostasis.app.data.model.Invitation::class, com.homeostasis.app.data.model.User::class, com.homeostasis.app.data.model.TaskHistory::class],
-    version = 12, // Database version 12
+    version = 13, // Database version
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -43,7 +44,8 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_8_9,
                     MIGRATION_9_10,
                     MIGRATION_10_11,
-                    MIGRATION_11_12
+                    MIGRATION_11_12,
+                    MIGRATION_12_13
                 )
                 .fallbackToDestructiveMigrationFrom(13) // Allow destructive migration from version 13
                 .build()
@@ -124,6 +126,51 @@ abstract class AppDatabase : RoomDatabase() {
                 // SQLite uses INTEGER for booleans (0 for false, 1 for true).
                 // NOT NULL DEFAULT 0 sets new rows and existing rows (for this new column) to false.
                 database.execSQL("ALTER TABLE task_history ADD COLUMN isDeletedLocally INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        // In your AppDatabase.kt
+        val MIGRATION_12_13: Migration = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("PRAGMA foreign_keys=OFF") // Temporarily disable foreign key constraints for table manipulation
+
+                // 1. Create the new table with the expected schema
+                // Note: isDeleted, isCompleted, needsSync, isDeletedLocally are INTEGER NOT NULL
+                // createdAt and lastModifiedAt are INTEGER NULL (for nullable Timestamps)
+                db.execSQL("""
+            CREATE TABLE tasks_new (
+                id TEXT PRIMARY KEY NOT NULL,
+                title TEXT NOT NULL,
+                description TEXT NOT NULL,
+                points INTEGER NOT NULL,
+                categoryId TEXT NOT NULL,
+                createdBy TEXT NOT NULL,
+                isDeleted INTEGER NOT NULL DEFAULT 0, 
+                createdAt INTEGER,                  -- Now Nullable
+                lastModifiedAt INTEGER,             -- Now Nullable
+                needsSync INTEGER NOT NULL DEFAULT 0,
+                isDeletedLocally INTEGER NOT NULL DEFAULT 0,
+                isCompleted INTEGER NOT NULL DEFAULT 0,
+                householdGroupId TEXT NOT NULL DEFAULT '' 
+            )
+        """.trimIndent())
+
+                // 2. Copy data from the old table to the new table
+                // Ensure all columns from the old 'tasks' table are selected.
+                // The old table had not-null createdAt and lastModifiedAt, so they will have values.
+                db.execSQL("""
+            INSERT INTO tasks_new (id, title, description, points, categoryId, createdBy, isDeleted, createdAt, lastModifiedAt, needsSync, isDeletedLocally, isCompleted, householdGroupId)
+            SELECT id, title, description, points, categoryId, createdBy, isDeleted, createdAt, lastModifiedAt, needsSync, isDeletedLocally, isCompleted, householdGroupId FROM tasks
+        """.trimIndent())
+
+                // 3. Drop the old tasks table
+                db.execSQL("DROP TABLE tasks")
+
+                // 4. Rename the new table to 'tasks'
+                db.execSQL("ALTER TABLE tasks_new RENAME TO tasks")
+
+                db.execSQL("PRAGMA foreign_keys=ON") // Re-enable foreign key constraints
+                Log.d("Migration", "Successfully migrated tasks table from version 12 to 13.")
             }
         }
 

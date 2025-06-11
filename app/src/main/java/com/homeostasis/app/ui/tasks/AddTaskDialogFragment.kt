@@ -47,7 +47,7 @@ class AddTaskDialogFragment : DialogFragment() {
 
         // Initialize UI components
         titleEditText = view.findViewById(R.id.task_title_edit_text)
-        descriptionEditText = view.findViewById(R.id.task_description_edit_text)
+       // descriptionEditText = view.findViewById(R.id.task_description_edit_text)
         pointsEditText = view.findViewById(R.id.task_points_edit_text)
         categoryDropdown = view.findViewById(R.id.task_category_dropdown)
         saveButton = view.findViewById(R.id.save_button)
@@ -96,7 +96,7 @@ class AddTaskDialogFragment : DialogFragment() {
 
     private fun saveTask() {
         val title = titleEditText.text.toString().trim()
-        val description = descriptionEditText.text.toString().trim()
+      //  val description = descriptionEditText.text.toString().trim()
         val points = pointsEditText.text.toString().toIntOrNull() ?: 0
         val category = categoryDropdown.text.toString().trim()
 
@@ -104,7 +104,7 @@ class AddTaskDialogFragment : DialogFragment() {
         // In a real implementation, you would use the Task model with all required fields
         val task = Task(
             title = title,
-            description = description,
+            description = "",//"",
             points = points,
             categoryId = category // Using category name as ID for now
         )

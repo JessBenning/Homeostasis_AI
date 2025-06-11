@@ -5,6 +5,7 @@ import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ImageButton
 import android.widget.TextView
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.recyclerview.widget.RecyclerView
@@ -17,7 +18,8 @@ import java.util.Date
  */
 class TaskAdapter(
     private var tasks: List<Task>, // Your list of Task objects from the ViewModel
-    private val onTaskClickListener: OnTaskClickListener
+    private val onTaskClickListener: OnTaskClickListener,
+    private val taskSwipeCallback: TaskSwipeCallback // Add this parameter
 ) : RecyclerView.Adapter<TaskAdapter.TaskViewHolder>() {
 
     // Map to store completion counts for the current session
@@ -28,6 +30,7 @@ class TaskAdapter(
         fun onTaskClick(task: Task)
         fun onCompletionDateClick(task: Task, position: Int) // Consider if this is still needed or how it relates to completion
         fun onTaskMarkedComplete(task: Task) // New listener method for when a task is "completed"
+
     }
 
 
@@ -71,6 +74,8 @@ class TaskAdapter(
         this.tasks = tasks
         notifyDataSetChanged()
     }
+
+
     
     //        private fun hasTaskHistory(task: Task): Boolean {
     //            return runBlocking {
@@ -114,11 +119,13 @@ class TaskAdapter(
     inner class TaskViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         private val container: com.google.android.material.card.MaterialCardView = itemView.findViewById(R.id.task_container)
         private val titleTextView: TextView = itemView.findViewById(R.id.task_title)
-        private val descriptionTextView: TextView = itemView.findViewById(R.id.task_description)
+     //   private val descriptionTextView: TextView = itemView.findViewById(R.id.task_description)
         private val categoryTextView: TextView = itemView.findViewById(R.id.task_category)
         private val pointsTextView: TextView = itemView.findViewById(R.id.task_points)
         private val lastDoneTextView: TextView = itemView.findViewById(R.id.task_last_done)
         private val completionCounterTextView: TextView = itemView.findViewById(R.id.completion_counter)
+        private val optionsMenuButton: ImageButton = itemView.findViewById(R.id.task_options_menu) // New
+
         private var completionCount: Int = 0
 
     fun bind(
@@ -127,7 +134,7 @@ class TaskAdapter(
             listener: OnTaskClickListener
         ) {
             titleTextView.text = task.title
-            descriptionTextView.text = task.description
+         //   descriptionTextView.text = task.description
             categoryTextView.text = task.categoryId
             pointsTextView.text = "${task.points} pts"
 
@@ -156,6 +163,11 @@ class TaskAdapter(
 
             lastDoneTextView.setOnClickListener {
                 onTaskClickListener.onCompletionDateClick(task, position)
+            }
+
+            optionsMenuButton.setOnClickListener {
+               // Call a function in TaskSwipeCallback to toggle actions for this item
+               taskSwipeCallback.toggleActionsForItem(position) // Use the position parameter
             }
             
         }
