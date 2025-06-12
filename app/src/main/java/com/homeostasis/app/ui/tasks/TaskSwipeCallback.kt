@@ -301,6 +301,13 @@ class TaskSwipeCallback(
         }
     }
 
+    /**
+     * Returns true if actions are currently shown for any item.
+     */
+    fun isActionsShownForAnyItem(): Boolean {
+        return isShowingActions
+    }
+
     // REMOVE the attachGestureDetector method and its RecyclerView.OnItemTouchListener
     // fun attachGestureDetector(recyclerView: RecyclerView) { ... }
 }

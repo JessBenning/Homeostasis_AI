@@ -19,7 +19,7 @@ import java.util.Date
 class TaskAdapter(
     private var tasks: List<Task>, // Your list of Task objects from the ViewModel
     private val onTaskClickListener: OnTaskClickListener,
-    private val taskSwipeCallback: TaskSwipeCallback // Add this parameter
+    private val taskSwipeCallback: TaskSwipeCallback
 ) : RecyclerView.Adapter<TaskAdapter.TaskViewHolder>() {
 
     // Map to store completion counts for the current session
@@ -132,7 +132,7 @@ class TaskAdapter(
         private val completionCounterTextView: TextView = itemView.findViewById(R.id.completion_counter)
         private val optionsMenuButton: ImageButton = itemView.findViewById(R.id.task_options_menu) // New
 
-        private var completionCount: Int = 0
+
 
     fun bind(
             task: Task,
@@ -147,6 +147,7 @@ class TaskAdapter(
 
 
             Log.d("TaskAdapter","counter= ${completionCount}, title='${task.title}'")
+            itemView.isClickable = true
 
             // Update the completion counter
             if (completionCount == 1) {
@@ -161,10 +162,42 @@ class TaskAdapter(
                 completionCounterTextView.visibility = View.GONE
             }
 
+//        Log.d("TaskViewHolder", "bind() called for task: ${task.title}")
+//        titleTextView.text = task.title
+        // ... other view bindings ...
+
+        // Temporarily simplify the listener to just a log for absolute clarity
+//        val testClickListener = View.OnClickListener {
+//            Log.e("ITEM_VIEW_CLICK_TEST", "Standalone OnClickListener was TRIGGERED for task: ${task.title}")
+//            // Put a breakpoint on the Log.e line above ^^^
+//        }
+//        itemView.setOnClickListener(testClickListener)
+//        Log.d("TaskViewHolder", "itemView.setOnClickListener has been set.")
+
+        // --- Inspection Code ---
+        // Add a small delay to ensure layout pass might complete if that's an issue (unlikely here)
+//        itemView.post {
+//            val hasClickListenerInfo = itemView.hasOnClickListeners() // Requires API 15+
+//            Log.d("TaskViewHolder", "Task: ${task.title} - itemView.hasOnClickListeners(): $hasClickListenerInfo")
+//
+//            // More detailed (if you can use reflection or debugging tools)
+//            // You can inspect 'itemView.mListenerInfo.mOnClickListener' via the debugger
+//            // to see if it's your 'testClickListener' instance.
+//            // This is more advanced and requires pausing in the debugger.
+//        }
+        // --- End Inspection Code ---
+
             // Set click listeners
             itemView.setOnClickListener {
-                // listener.onTaskClick(task) // Remove or call this too if needed
-                listener.onTaskMarkedComplete(task) // THIS WILL TRIGGER THE COUNT INCREMENT
+
+                // Only trigger completion if actions are NOT shown
+                if (!taskSwipeCallback.isActionsShownForAnyItem()) {
+                    listener.onTaskClick(task) // Remove or call this too if needed
+                    listener.onTaskMarkedComplete(task) // THIS WILL TRIGGER THE COUNT INCREMENT
+                    // Removed: onTaskClickListener.onCompletionDateClick(task, position)
+                } else {
+                    taskSwipeCallback.toggleActionsForItem(position)
+                }
             }
 
             lastDoneTextView.setOnClickListener {

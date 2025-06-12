@@ -28,7 +28,7 @@ class AddTaskDialogFragment : DialogFragment() {
 
     // UI components
     private lateinit var titleEditText: TextInputEditText
-    private lateinit var descriptionEditText: TextInputEditText
+  //  private lateinit var descriptionEditText: TextInputEditText
     private lateinit var pointsEditText: TextInputEditText
     private lateinit var categoryDropdown: AutoCompleteTextView
     private lateinit var saveButton: MaterialButton
@@ -119,9 +119,9 @@ class AddTaskDialogFragment : DialogFragment() {
         dismiss()
     }
 
-    fun setAddTaskListener(listener: AddTaskListener) {
-        this.listener = listener
-    }
+//    fun setAddTaskListener(listener: AddTaskListener) {
+//        this.listener = listener
+//    }
 
     companion object {
         const val TAG = "AddTaskDialogFragment"

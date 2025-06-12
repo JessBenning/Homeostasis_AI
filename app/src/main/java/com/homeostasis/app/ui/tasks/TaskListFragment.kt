@@ -141,10 +141,8 @@ class TaskListFragment : Fragment(), AddModTaskDialogFragment.AddModTaskListener
         itemTouchHelper.attachToRecyclerView(recyclerView)
 
         // Attach the RecyclerView to the swipe callback
-        swipeCallback.attachToRecyclerView(recyclerView) // Add this line
+        swipeCallback.attachToRecyclerView(recyclerView)
 
-        // Attach gesture detector for long press
-        // swipeCallback.attachGestureDetector(recyclerView) // This was commented out previously
 
         // Then Set up RecyclerView and pass the initialized swipeCallback
         taskAdapter = TaskAdapter(viewModel.tasks.value, this, swipeCallback) // Pass swipeCallback
@@ -379,13 +377,6 @@ class TaskListFragment : Fragment(), AddModTaskDialogFragment.AddModTaskListener
             .show()
     }
 
-    private fun showUnabaleToUndoSnackbar(task: Task) {
-        Snackbar.make(
-            requireView(),
-            "Task '${task.title}' completion undone: -${task.points} points",
-            Snackbar.LENGTH_LONG
-        ).show()
-    }
 
     private fun showUndoCompletionSnackbar(task: Task) {
         Snackbar.make(
