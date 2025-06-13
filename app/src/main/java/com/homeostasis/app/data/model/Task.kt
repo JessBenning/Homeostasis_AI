@@ -59,14 +59,14 @@ data class Task(
     constructor() : this(
         id = "",
         title = "",
-        description = "",
+        description = "", //can be removed
         points = 0,
         categoryId = "",
         createdBy = "",
         isDeleted = false,
         createdAt = Timestamp.now(), // Default for new local object
         lastModifiedAt = Timestamp.now(), // Default for new local object
-        isCompleted = false,
+        isCompleted = false, //can be removed
         householdGroupId = "",
         needsSync = false,         // Default for local-only field
         isDeletedLocally = false   // Default for local-only field

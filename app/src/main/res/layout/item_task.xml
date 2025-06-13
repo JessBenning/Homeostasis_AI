@@ -87,11 +87,11 @@
                 android:id="@+id/task_last_done"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
                 android:layout_marginTop="8dp"
-                android:layout_marginEnd="16dp"
                 android:textAppearance="@style/TextAppearance.Homeostasis.Caption"
                 android:textStyle="italic"
-                app:layout_constraintEnd_toStartOf="@+id/task_options_menu"
+                app:layout_constraintStart_toEndOf="@+id/task_points"
                 app:layout_constraintTop_toBottomOf="@+id/task_title"
                 tools:text="Last done: Yesterday by John" />
 
@@ -112,43 +112,33 @@
                 app:layout_constraintTop_toBottomOf="@+id/task_title"
                 tools:text="10 pts" />
 
+
             <ImageButton
                 android:id="@+id/task_options_menu"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
+                android:layout_width="23dp"
+                android:layout_height="22dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="Task Options"
+                android:rotation="90"
                 android:src="@drawable/ic_overflow_menu"
                 app:layout_constraintBottom_toBottomOf="parent"
                 app:layout_constraintEnd_toEndOf="parent" />
 
-
-            <TextView
-                android:id="@+id/task_category"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:layout_marginTop="8dp"
-                android:background="@android:color/holo_blue_light"
-                android:paddingStart="@dimen/spacing_small"
-                android:paddingTop="2dp"
-                android:paddingEnd="@dimen/spacing_small"
-                android:paddingBottom="2dp"
-                android:textAppearance="?attr/textAppearanceCaption"
-                android:textColor="@android:color/white"
-                app:layout_constraintStart_toEndOf="@+id/task_points"
-                app:layout_constraintTop_toBottomOf="@+id/task_title"
-                tools:text="Household" />
+<!--            <TextView-->
+<!--                android:id="@+id/task_category"-->
+<!--                android:layout_width="wrap_content"-->
+<!--                android:layout_height="wrap_content"-->
+<!--                android:background="@android:color/holo_blue_light"-->
+<!--                android:paddingStart="@dimen/spacing_small"-->
+<!--                android:paddingTop="2dp"-->
+<!--                android:paddingEnd="@dimen/spacing_small"-->
+<!--                android:paddingBottom="2dp"-->
+<!--                android:textAppearance="?attr/textAppearanceCaption"-->
+<!--                android:textColor="@android:color/white"-->
+<!--                app:layout_constraintStart_toStartOf="parent"-->
+<!--                app:layout_constraintTop_toTopOf="parent"-->
+<!--                tools:text="Household" />-->
         </androidx.constraintlayout.widget.ConstraintLayout>
-
-        <!-- Foreground Content Container (Your original ConstraintLayout) -->
-        <!-- This view will slide to reveal the actions -->
-        <!--        /* Or ?android:attr/windowBackground if bg_task_item is transparent */-->
-
-<!--        /* To intercept clicks if needed when actions are shown */-->
-
-
-        <!--    </androidx.constraintlayout.widget.ConstraintLayout>-->
 
     </FrameLayout>
 </com.google.android.material.card.MaterialCardView>

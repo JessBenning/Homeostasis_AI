@@ -63,7 +63,7 @@
     <string name="task_history_points">%1$d pts</string>
     <string name="task_history_points_behind">(%1$d pts behind leader)</string>
     <string name="task_history_completion">Task Completion History</string>
-    <string name="task_history_completed_by">Completed by: %1$s</string>
+    <string name="task_history_completed_by">%1$s</string>
 
     
     <!-- Profile -->

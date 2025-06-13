@@ -12,144 +12,185 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
-import com.homeostasis.app.data.remote.TaskRepository
+import com.homeostasis.app.data.remote.UserRepository
 import kotlinx.coroutines.flow.distinctUntilChanged
-import com.homeostasis.app.data.HouseholdGroupIdProvider // Import HouseholdGroupIdProvider
+import com.homeostasis.app.data.HouseholdGroupIdProvider
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flatMapLatest // Import flatMapLatest
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map // Added for transforming the flow
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import java.text.SimpleDateFormat
+import java.util.Locale
+import kotlinx.coroutines.flow.combine // <<< IMPORT THIS
 
 @HiltViewModel
 class TaskListViewModel @Inject constructor(
-    private val taskRepository: TaskRepository, // Keep TaskRepository
-    private val userRepository: com.homeostasis.app.data.remote.UserRepository, // Add UserRepository
+    private val taskRepository: com.homeostasis.app.data.remote.TaskRepository, // Keep your existing TaskRepository
+    private val userRepository: UserRepository,
     private val taskHistoryDao: TaskHistoryDao,
     private val taskDao: TaskDao,
-    private val householdGroupIdProvider: HouseholdGroupIdProvider // Keep HouseholdGroupIdProvider
+    private val householdGroupIdProvider: HouseholdGroupIdProvider
 ) : ViewModel() {
 
     private val _tasks = MutableStateFlow<List<Task>>(emptyList())
-    val tasks: StateFlow<List<Task>> = _tasks
+    // val tasks: StateFlow<List<Task>> = _tasks // Expose if needed
 
-    private val TAG = "TaskListViewModel" // Define a TAG
+    private val _displayTasks = MutableStateFlow<List<DisplayTask>>(emptyList())
+    val displayTasks: StateFlow<List<DisplayTask>> = _displayTasks
 
+    // ADD THIS TRIGGER
+    private val taskHistoryChangeTrigger = MutableStateFlow(0)
+
+    private val TAG = "TaskListViewModel"
 
     init {
-        loadActiveTasks() // Renamed for clarity
+        setupDisplayTasksFlow() // Call the new combined flow setup
 
-        // Your existing logging logic for when tasks are loaded
         viewModelScope.launch {
-            tasks.collect { taskList ->
-                if (taskList.isNotEmpty()) {
-                    Log.d(TAG, "Active tasks loaded/updated (${taskList.size}):")
-                    // You might not need to log every task here on every update
-                    // Consider logging only on first load or significant changes
+            _displayTasks.collect { displayTaskList ->
+                if (displayTaskList.isNotEmpty()) {
+                    Log.d(TAG, "Display tasks loaded/updated (${displayTaskList.size}) with last completed info.")
                 } else {
-                    Log.d(TAG, "Active tasks list is currently empty.")
+                    Log.d(TAG, "Display tasks list is currently empty.")
                 }
             }
         }
     }
 
+    private fun formatDate(timestamp: Timestamp?): String? {
+        return timestamp?.toDate()?.let { date ->
+            val sdf = SimpleDateFormat("HH:mm MMM dd", Locale.getDefault()) // Corrected typo HH:MM to HH:mm
+            sdf.format(date)
+        }
+    }
 
-    private fun loadActiveTasks() {
+    private fun setupDisplayTasksFlow() {
         viewModelScope.launch {
-            // Observe tasks from the DAO that are NOT soft-deleted
-            // The DAO's getActiveTasks() method should have the "WHERE isDeleted = 0" clause
-            householdGroupIdProvider.getHouseholdGroupId() // Get the Flow of householdGroupId
-                .flatMapLatest { householdGroupId -> // Use flatMapLatest to switch to a new flow whenever householdGroupId changes
-                    householdGroupId?.let {
-                        taskDao.getActiveVisibleTasks(it) // Pass the householdGroupId to the DAO
-                    } ?: flowOf(emptyList()) // Emit an empty list if householdGroupId is null
+            householdGroupIdProvider.getHouseholdGroupId()
+                .flatMapLatest { householdGroupId ->
+                    if (householdGroupId != null) {
+                        Log.d(TAG, "flatMapLatest: new householdGroupId: $householdGroupId. Combining TaskDao and HistoryTrigger.")
+                        combine(
+                            taskDao.getActiveVisibleTasks(householdGroupId), // Flow<List<Task>>
+                            taskHistoryChangeTrigger // Flow<Int> - our trigger
+                        ) { tasksFromDb, triggerValue -> // tasksFromDb is List<Task>, triggerValue is the Int (not directly used but signals change)
+                            Log.d(TAG, "Combine triggered: Tasks count = ${tasksFromDb.size}, Trigger value = $triggerValue. Processing for display...")
+                            _tasks.value = tasksFromDb // Update raw task list if needed
+
+                            // Re-fetch householdId within the combine block to ensure it's current if it can change rapidly,
+                            // or pass it down if flatMapLatest guarantees it's the one we need for this emission.
+                            // For simplicity, re-fetching or using the one from flatMapLatest's scope:
+                            val currentHId = householdGroupId // Use the householdGroupId from the outer flatMapLatest scope
+
+                            tasksFromDb.map { task ->
+                                async(viewModelScope.coroutineContext) {
+                                    val latestHistory = taskHistoryDao.getLatestTaskHistoryForTask(task.id, currentHId)
+                                    var lastCompletedByName: String? = null // Default to null, then "N/A" if still null after check
+                                    if (latestHistory?.userId != null) {
+                                        val user = userRepository.getUser(latestHistory.userId)
+                                        lastCompletedByName = user?.name ?: "Unknown User"
+                                    } else {
+                                        lastCompletedByName = "N/A"
+                                    }
+                                    Log.v(TAG, "Task '${task.title}' (processing): LastHistoryUser=${latestHistory?.userId}, CompletedAt=${formatDate(latestHistory?.completedAt)}, By=${lastCompletedByName}")
+
+                                    DisplayTask(
+                                        task = task,
+                                        lastCompletedByDisplay = lastCompletedByName,
+                                        lastCompletedDateDisplay = formatDate(latestHistory?.completedAt)
+                                    )
+                                }
+                            }.awaitAll()
+                        }
+                    } else {
+                        Log.d(TAG, "flatMapLatest: householdGroupId is null, emitting empty list for displayTasks.")
+                        flowOf(emptyList<DisplayTask>()) // Emit empty if no household ID
+                    }
                 }
-                .distinctUntilChanged() // Only emit when the list content actually changes
-                .collect { activeTasksFromDb ->
-                    _tasks.value = activeTasksFromDb
-                    Log.d(TAG, "loadActiveTasks collected: ${activeTasksFromDb.size} tasks")
+                .distinctUntilChanged() // Only update _displayTasks if the content actually changes
+                .collect { processedDisplayTasks ->
+                    _displayTasks.value = processedDisplayTasks
+                    Log.d(TAG, "Collect: _displayTasks updated with ${processedDisplayTasks.size} items post-combine.")
                 }
         }
     }
 
     fun addTask(task: Task) {
         viewModelScope.launch {
-            // Prepare the task for local insertion, mark for sync
+            val currentHouseholdId = householdGroupIdProvider.getHouseholdGroupId().first()
+                ?: HouseholdGroupIdProvider.DEFAULT_HOUSEHOLD_GROUP_ID
             val taskToInsertLocally = task.copy(
-                isDeleted = false, // Ensure it's not marked deleted if it's new
+                isDeleted = false,
                 lastModifiedAt = Timestamp.now(),
-                needsSync = true, // Mark for synchronization
+                needsSync = true,
                 isDeletedLocally = false,
-                householdGroupId = householdGroupIdProvider.getHouseholdGroupId().first() ?: HouseholdGroupIdProvider.DEFAULT_HOUSEHOLD_GROUP_ID // Use the constant
+                householdGroupId = currentHouseholdId
             )
-            taskDao.upsertTask(taskToInsertLocally) // Or your equivalent DAO method
-            // FirebaseSyncManager will handle calling taskRepository.createOrUpdateTaskInFirestore later
+            taskDao.upsertTask(taskToInsertLocally)
+            Log.d(TAG, "Task '${task.title}' added to DAO. Flow should trigger reprocessing.")
+            // No need to poke taskHistoryChangeTrigger here unless adding a task also adds a history item.
         }
     }
-
 
     fun updateTask(task: Task) {
         viewModelScope.launch {
+            val currentHouseholdId = householdGroupIdProvider.getHouseholdGroupId().first()
+                ?: HouseholdGroupIdProvider.DEFAULT_HOUSEHOLD_GROUP_ID
             val taskToUpdateLocally = task.copy(
                 lastModifiedAt = Timestamp.now(),
                 needsSync = true,
-                householdGroupId = householdGroupIdProvider.getHouseholdGroupId().first() ?: HouseholdGroupIdProvider.DEFAULT_HOUSEHOLD_GROUP_ID // Use the constant
+                householdGroupId = currentHouseholdId
             )
-            taskDao.upsertTask(taskToUpdateLocally) // Or your equivalent DAO method for updates
-            // FirebaseSyncManager will handle calling taskRepository.createOrUpdateTaskInFirestore later
+            taskDao.upsertTask(taskToUpdateLocally)
+            Log.d(TAG, "Task '${task.title}' updated in DAO. Flow should trigger reprocessing.")
+            // No need to poke taskHistoryChangeTrigger here.
         }
     }
 
-    /**
-     * Marks a task as deleted locally. The actual deletion from Firestore
-     * and subsequently from Room will be handled by FirebaseSyncManager.
-     */
     fun deleteTask(task: Task) {
         viewModelScope.launch {
             if (task.id.isNotBlank()) {
+                val currentHouseholdId = householdGroupIdProvider.getHouseholdGroupId().first()
+                    ?: HouseholdGroupIdProvider.DEFAULT_HOUSEHOLD_GROUP_ID
                 Log.d(TAG, "Marking task for local deletion and sync: ${task.id}")
-                // 1. Mark as deleted locally AND needs sync
                 val taskToMarkAsDeleted = task.copy(
-                    isDeletedLocally = true, // Mark that it's deleted from the user's perspective locally
-                    needsSync = true,        // Indicate that this deletion needs to be synced to Firestore
+                    isDeletedLocally = true,
+                    needsSync = true,
                     lastModifiedAt = Timestamp.now(),
-                    householdGroupId = householdGroupIdProvider.getHouseholdGroupId().first() ?: HouseholdGroupIdProvider.DEFAULT_HOUSEHOLD_GROUP_ID // Use the constant
+                    householdGroupId = currentHouseholdId
                 )
-                taskDao.upsertTask(taskToMarkAsDeleted) // Update the task in Room
-
-                // The UI will update because it observes tasks from `taskDao.getActiveVisibleTasks()`
-                // which should ideally filter out tasks where `isDeletedLocally = true`.
-                // OR, your `getActiveVisibleTasks()` might only filter `isDeleted = false`,
-                // and `FirebaseSyncManager` will later set `isDeleted = true` after successful Firestore delete.
-
-                // FirebaseSyncManager will later:
-                // - See `needsSync = true` and `isDeletedLocally = true`.
-                // - Call `taskRepository.softDeleteTaskInFirestore(task.id)` or `hardDeleteTaskFromFirestore(task.id)`.
-                // - If successful, potentially update the Room record:
-                //   - Set `isDeleted = true` (the "official" synced deletion status).
-                //   - Set `isDeletedLocally = false` (local deletion intent is processed).
-                //   - Set `needsSync = false`.
-                //   - Or, if hard deleting, remove the record from Room entirely.
+                taskDao.upsertTask(taskToMarkAsDeleted)
+                Log.d(TAG, "Task '${task.title}' marked for deletion in DAO. Flow should trigger reprocessing.")
+                // Deleting a task might implicitly mean its "last done" info is no longer relevant for that task
+                // but the task list itself changes, which triggers the combine.
+                // If there's a specific history cleanup that affects other tasks' display, then trigger.
+                // For now, assuming taskDao change is sufficient.
             } else {
                 Log.e(TAG, "Task ID is blank, cannot mark as deleted.")
             }
         }
     }
 
-
-    suspend fun undoTaskCompletionSuspend(taskHistoryId: String): Boolean { // Changed to suspend and return Boolean
-        return try {
-            val householdGroupId = householdGroupIdProvider.getHouseholdGroupId().first() ?: HouseholdGroupIdProvider.DEFAULT_HOUSEHOLD_GROUP_ID
+    suspend fun undoTaskCompletionSuspend(taskHistoryId: String): Boolean {
+        val successfulUndo = try {
+            val householdGroupId = householdGroupIdProvider.getHouseholdGroupId().first()
+                ?: HouseholdGroupIdProvider.DEFAULT_HOUSEHOLD_GROUP_ID
             val taskHistory = taskHistoryDao.getTaskHistoryById(taskHistoryId, householdGroupId)
 
             if (taskHistory != null && !taskHistory.isDeleted && !taskHistory.isDeletedLocally) {
                 taskHistoryDao.markTaskHistoryAsDeletedLocally(taskHistoryId, householdGroupId)
                 Log.d(TAG, "SUCCESS: TaskHistory entry marked as deleted locally. ID: $taskHistoryId")
-                // TODO: Handle related data updates like score if necessary
+                // POKE THE TRIGGER after successful local DB modification
+                taskHistoryChangeTrigger.value++ // Or .value-- , the change is what matters
+                Log.d(TAG, "UndoTaskCompletion: taskHistoryChangeTrigger updated to ${taskHistoryChangeTrigger.value}")
                 true
             } else {
                 if (taskHistory == null) {
                     Log.e(TAG, "ERROR: Could not find TaskHistory entry with ID $taskHistoryId to undo.")
                 } else {
-                    Log.w(TAG, "INFO: TaskHistory entry with ID $taskHistoryId was already deleted or not undoable. No action taken.")
+                    Log.w(TAG, "INFO: TaskHistory entry with ID $taskHistoryId was already deleted or not undoable.")
                 }
                 false
             }
@@ -157,39 +198,50 @@ class TaskListViewModel @Inject constructor(
             Log.e(TAG, "ERROR undoing TaskHistory completion: ${e.message}", e)
             false
         }
+        return successfulUndo
     }
 
-
     suspend fun getLatestTaskHistoryIdForTaskAndUser(taskId: String, userId: String): String? {
-        val householdGroupId = householdGroupIdProvider.getHouseholdGroupId().first() ?: HouseholdGroupIdProvider.DEFAULT_HOUSEHOLD_GROUP_ID
+        val householdGroupId = householdGroupIdProvider.getHouseholdGroupId().first()
+            ?: HouseholdGroupIdProvider.DEFAULT_HOUSEHOLD_GROUP_ID
         val latestHistory = taskHistoryDao.getLatestTaskHistoryForTaskAndUser(taskId, userId, householdGroupId)
         return latestHistory?.id
     }
 
-    fun recordTaskCompletion(task: Task, userId: String, completedAt: Timestamp? = null) {
+    fun recordTaskCompletion(task: Task, userId: String, completedAtTimestamp: Timestamp? = null) {
         viewModelScope.launch {
+            val currentHouseholdId = householdGroupIdProvider.getHouseholdGroupId().first()
+                ?: HouseholdGroupIdProvider.DEFAULT_HOUSEHOLD_GROUP_ID
+            val effectiveCompletedAt = completedAtTimestamp ?: Timestamp.now()
             val documentId = java.util.UUID.randomUUID().toString()
+
+            Log.d(TAG, "RecordTaskCompletion: Task '${task.title}', User '$userId', Timestamp: ${effectiveCompletedAt.toDate()}")
+
             val taskHistory = com.homeostasis.app.data.model.TaskHistory(
                 id = documentId,
                 taskId = task.id,
                 userId = userId,
-                completedAt = completedAt ?: Timestamp.now(),
+                completedAt = effectiveCompletedAt,
                 pointValue = task.points,
                 isDeleted = false,
-                isArchived = false,
-                archivedInResetId = null,
-                needsSync = true,
-                lastModifiedAt = Timestamp.now(),
-                householdGroupId = householdGroupIdProvider.getHouseholdGroupId().first() ?: HouseholdGroupIdProvider.DEFAULT_HOUSEHOLD_GROUP_ID // Use the constant
+                isDeletedLocally = false,
+                needsSync = true, // Ensure your TaskHistory model has this if you sync it
+                householdGroupId = currentHouseholdId // Ensure your TaskHistory model has this
             )
-            Log.d(TAG, "Attempting to insert TaskHistory into Room: $taskHistory") // Log BEFORE insert
+
             try {
+                // IMPORTANT: Ensure this is your actual DAO method to insert/save a TaskHistory item
                 taskHistoryDao.insertOrUpdate(taskHistory)
-                Log.d(TAG, "SUCCESS: TaskHistory entry inserted into Room. ID: ${taskHistory.id}") // Log AFTER successful insert
+                Log.d(TAG, "RecordTaskCompletion: TaskHistory saved successfully for task ${task.id}. History ID: $documentId")
+
+                // POKE THE TRIGGER after successful local DB modification
+                taskHistoryChangeTrigger.value++
+                Log.d(TAG, "RecordTaskCompletion: taskHistoryChangeTrigger incremented to ${taskHistoryChangeTrigger.value}")
+
             } catch (e: Exception) {
-                Log.e(TAG, "ERROR inserting TaskHistory into Room: ${e.message}", e) // Log any error
+                Log.e(TAG, "RecordTaskCompletion: Error saving TaskHistory for task ${task.id}", e)
+                // Optionally, you might want to revert the trigger or handle the error in the UI
             }
         }
     }
-
 }

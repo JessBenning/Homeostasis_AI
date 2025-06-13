@@ -5,17 +5,17 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
-import com.homeostasis.app.data.model.Task
+// Removed: import com.homeostasis.app.data.model.Task
 import com.homeostasis.app.data.model.User
 import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface UserDao {
     @Query("SELECT * FROM User WHERE id = :userId AND householdGroupId = :householdGroupId")
-    fun getUserByIdFlow(userId: String, householdGroupId: String): Flow<User>
+    fun getUserByIdFlow(userId: String, householdGroupId: String): Flow<User?> // Changed to Flow<User?>
 
     @Query("SELECT * FROM User WHERE id = :userId AND householdGroupId = :householdGroupId")
-    suspend fun getUserById(userId: String, householdGroupId: String): User? // Change to suspend fun and User?
+    suspend fun getUserById(userId: String, householdGroupId: String): User?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertUser(user: User)
@@ -35,25 +35,6 @@ interface UserDao {
     @Query("SELECT * FROM User WHERE householdGroupId = :householdGroupId")
     fun getAllUsersFlow(householdGroupId: String): Flow<List<User>>
 
-    /**
-     * Updates the user's profile information in the local database and marks it for sync.
-     *
-     * @param userId The ID of the user to update.
-     * @param name The new name for the user.
-     * @param profileImageUrl The new local profile image path for the user.
-     */
-    suspend fun updateUserProfileLocal(userId: String, name: String, profileImageUrl: String) {
-        // Retrieve the existing user to preserve other fields
-        val existingUser = getUserById(userId, "") // TODO: Need householdGroupId here
-
-        existingUser?.let {
-            val updatedUser = it.copy(
-                name = name,
-                profileImageUrl = profileImageUrl,
-                needsSync = true // Mark for sync
-            )
-            upsertUser(updatedUser)
-        }
-        // TODO: Handle case where user is not found locally?
-    }
+    // The updateUserProfileLocal default method has been removed.
+    // This logic will be handled by UserRepository.
 }

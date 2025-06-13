@@ -46,6 +46,12 @@ interface TaskHistoryDao {
     @Query("SELECT * FROM task_history WHERE taskId = :taskId AND userId = :userId AND householdGroupId = :householdGroupId ORDER BY completedAt DESC LIMIT 1")
     suspend fun getLatestTaskHistoryForTaskAndUser(taskId: String, userId: String, householdGroupId: String): TaskHistory?
 
+    /**
+     * Retrieves the most recent, non-deleted TaskHistory entry for a specific task.
+     */
+    @Query("SELECT * FROM task_history WHERE taskId = :taskId AND householdGroupId = :householdGroupId AND isDeleted = 0 AND isDeletedLocally = 0 ORDER BY completedAt DESC LIMIT 1")
+    suspend fun getLatestTaskHistoryForTask(taskId: String, householdGroupId: String): TaskHistory?
+
     @Upsert // Or @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdate(taskHistory: TaskHistory)
 
@@ -64,4 +70,5 @@ interface TaskHistoryDao {
 
     @Query("SELECT * FROM task_history WHERE householdGroupId = :householdGroupId ORDER BY completedAt DESC" ) // Or your actual table name
     fun getAllTaskHistoryFlow(householdGroupId: String): Flow<List<TaskHistory>>
+
 }

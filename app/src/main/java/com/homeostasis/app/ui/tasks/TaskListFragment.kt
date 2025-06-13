@@ -2,15 +2,17 @@ package com.homeostasis.app.ui.tasks
 
 import android.app.DatePickerDialog
 import android.os.Bundle
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
 import android.widget.Toast
+//import androidx.compose.ui.semantics.getOrNull
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
-import androidx.lifecycle.observe
+// import androidx.lifecycle.observe // Not needed for Flow collection
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -29,12 +31,13 @@ import javax.inject.Inject
 
 /**
  * Fragment for displaying the list of tasks.
+ * Manages UI interactions and observes DisplayTask objects from the ViewModel.
  */
 @AndroidEntryPoint
 class TaskListFragment : Fragment(), AddModTaskDialogFragment.AddModTaskListener, TaskAdapter.OnTaskClickListener {
 
     private val viewModel: TaskListViewModel by viewModels()
-    @Inject lateinit var userRepository: com.homeostasis.app.data.remote.UserRepository // Inject UserRepository
+    @Inject lateinit var userRepository: com.homeostasis.app.data.remote.UserRepository
 
     private lateinit var recyclerView: RecyclerView
     private lateinit var emptyView: TextView
@@ -43,8 +46,7 @@ class TaskListFragment : Fragment(), AddModTaskDialogFragment.AddModTaskListener
     private lateinit var itemTouchHelper: ItemTouchHelper
     private lateinit var swipeCallback: TaskSwipeCallback
 
-    // Current user ID (would normally come from authentication)
-// private val currentUserId = "current_user" // Removed hardcoded user ID
+    private val TAG = "TaskListFragment"
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -57,95 +59,88 @@ class TaskListFragment : Fragment(), AddModTaskDialogFragment.AddModTaskListener
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        // Initialize UI components
         recyclerView = view.findViewById(R.id.task_recycler_view)
         emptyView = view.findViewById(R.id.empty_view)
         addTaskButton = view.findViewById(R.id.add_task_button)
 
-        // Set up RecyclerView
         setupRecyclerView()
+        observeDisplayTasks() // Changed from observeTasks
 
-        // Observe tasks from ViewModel
-        observeTasks()
-
-        // Set up click listeners
         addTaskButton.setOnClickListener {
             showAddTaskDialog()
         }
-
-        // taskAdapter = TaskAdapter(emptyList(), this) // Removed: Initialized in setupRecyclerView instead
-        // recyclerView.adapter = taskAdapter // Removed: Set in setupRecyclerView instead
-
-//        viewModel.tasks.observe(viewLifecycleOwner) { tasks ->
-//            taskAdapter.setTasks(tasks)
-            // Decide if you want to reset counts when tasks are reloaded from ViewModel
-            // taskAdapter.resetAllCompletionCounts() // Optional: if full reload should clear session counts
-     //   }
     }
 
-    override fun onTaskMarkedComplete(task: Task) {
-        // TODO: Implement what should happen when a task is marked complete.
-        // For example, you might want to:
-        // - Update the task's status in your ViewModel or repository
-        // - Show a Snackbar or Toast message
-        // - Update the UI to reflect the change
-        taskAdapter.incrementCompletionCount(task.id)
-
-        // Get the current user ID
+    // This interface method from TaskAdapter.OnTaskClickListener is now more complex due to session counts
+    override fun onTaskMarkedComplete(task: Task, isNewSessionCompletion: Boolean) {
+        Log.d(TAG, "onTaskMarkedComplete (from adapter click) for: ${task.title}. Is new for session: $isNewSessionCompletion")
         val currentUserId = userRepository.getCurrentUserId()
 
         if (currentUserId != null) {
-            viewModel.recordTaskCompletion(task, currentUserId) // Pass the actual user ID
+            // 1. Increment session count in adapter
+            // The adapter's click listener already determined if it was a "new" completion for the session *before* calling this.
+            // So, we just tell the adapter to increment its internal count.
+            taskAdapter.incrementSessionCompletionCount(task.id)
+            val position = taskAdapter.displayTasks.indexOfFirst { it.task.id == task.id }
+            if (position != -1) {
+                taskAdapter.notifyItemChanged(position) // Update UI for session count change
+            }
+
+            // 2. Record completion in ViewModel (for TaskHistory and "Last done by/on")
+            viewModel.recordTaskCompletion(task, currentUserId, Timestamp.now())
+
+            // 3. Snackbar confirmation
+            val currentSessionCount = taskAdapter.getSessionCompletionCount(task.id)
+            showSnackbar("'${task.title}' completed! (Session: $currentSessionCount)")
+
+            // 4. Update score (if applicable, possibly only for the first completion in session)
+//            if (isNewSessionCompletion || task.points != 0) { // Example: always give points, or only if new
+//                updateUserScore(task.points)
+//            }
         } else {
-            // Handle case where user is not logged in
             showSnackbar("Error: User not logged in. Cannot record task completion.")
         }
-
-        // Removed the redundant call to viewModel.recordTaskCompletion with hardcoded ID
-        // viewModel.recordTaskCompletion(task, currentUserId)
-
-
-        // Removed the commented out Snackbar code
-        // //        androidx.compose.material3.Snackbar.make(requireView(), "Task '${task.title}' marked complete!",
-        // //            androidx.compose.material3.Snackbar.LENGTH_SHORT).show()
     }
 
-    private fun observeTasks() {
+
+    private fun observeDisplayTasks() { // Changed from observeTasks
         lifecycleScope.launch {
-            viewModel.tasks.collectLatest { tasks ->
-                updateUI(tasks)
+            viewModel.displayTasks.collectLatest { displayTasks -> // Observe displayTasks
+                updateUIWithDisplayTasks(displayTasks) // Pass List<DisplayTask>
             }
         }
     }
 
     override fun onPause() {
         super.onPause()
-        // Reset task item appearance when leaving the fragment
-        taskAdapter.hideAllBadges()
-
-        // Hide any shown actions
+        Log.d(TAG, "onPause called. Resetting session completion counts in adapter.")
+        taskAdapter.resetAllSessionCompletionCounts() // Reset session counts
+        taskAdapter.hideAllBadges() // If you have badges other than session counts
         swipeCallback.hideCurrentlyShownActions()
     }
 
+    override fun onResume() {
+        super.onResume()
+        Log.d(TAG, "onResume called.")
+        // Data will be re-collected via observeDisplayTasks if it changed while paused.
+        // Session counts are reset in onPause, so they will be fresh.
+    }
+
     private fun setupRecyclerView() {
-        // Set up swipe gestures and long press FIRST
         swipeCallback = TaskSwipeCallback(
             requireContext(),
-            onSwipeRight = { position -> completeTask(position) },
-            onSwipeLeft = { position -> undoTaskCompletion(position) },
-            onEditClick = { position -> editTask(position) },
-            onDeleteClick = { position -> confirmDeleteTask(position) }
+            onSwipeRight = { position -> completeTaskBySwipe(position) },
+            onSwipeLeft = { position -> undoTaskCompletionBySwipe(position) },
+            onEditClick = { position -> editTaskBySwipe(position) },
+            onDeleteClick = { position -> confirmDeleteTaskBySwipe(position) }
         )
 
         itemTouchHelper = ItemTouchHelper(swipeCallback)
         itemTouchHelper.attachToRecyclerView(recyclerView)
-
-        // Attach the RecyclerView to the swipe callback
         swipeCallback.attachToRecyclerView(recyclerView)
 
-
-        // Then Set up RecyclerView and pass the initialized swipeCallback
-        taskAdapter = TaskAdapter(viewModel.tasks.value, this, swipeCallback) // Pass swipeCallback
+        // Initialize adapter with an empty list of DisplayTask and the swipeCallback
+        taskAdapter = TaskAdapter(emptyList(), this, swipeCallback)
         recyclerView.layoutManager = LinearLayoutManager(context)
         recyclerView.adapter = taskAdapter
     }
@@ -158,180 +153,145 @@ class TaskListFragment : Fragment(), AddModTaskDialogFragment.AddModTaskListener
     }
 
     override fun onTaskAdded(task: Task) {
-        // Generate a unique ID for the task if it doesn't have one
         val taskWithId = if (task.id.isEmpty()) {
             task.copy(id = java.util.UUID.randomUUID().toString())
         } else {
             task
         }
-
-        // Add the task to ViewModel
         viewModel.addTask(taskWithId)
-
-        // Show a success message
         showSnackbar("Task '${taskWithId.title}' added successfully!")
     }
 
     override fun onTaskModified(task: Task) {
-        // Update the task in ViewModel
         viewModel.updateTask(task)
-
-        // Show a success message
         showSnackbar("Task '${task.title}' updated successfully!")
     }
 
+    // This is for direct clicks on the item if not handled by swipe or specific buttons
     override fun onTaskClick(task: Task) {
-        // Handle task click (e.g., show task details)
-        Toast.makeText(
-            requireContext(),
-            "Task clicked: ${task.title}",
-            Toast.LENGTH_SHORT
-        ).show()
+        Toast.makeText(requireContext(), "Task clicked: ${task.title}", Toast.LENGTH_SHORT).show()
+        // If a general click should also mark as complete:
+        // val isNewForSession = taskAdapter.getSessionCompletionCount(task.id) == 0
+        // onTaskMarkedComplete(task, isNewForSession)
     }
 
-    override fun onCompletionDateClick(task: Task, position: Int) {
-        showDatePickerDialog(task, position)
+    override fun onCompletionDateClick(task: Task, position: Int) { // Position might still be useful for quick access
+        showDatePickerDialogForTask(task, position)
     }
 
-    private fun showDatePickerDialog(task: Task, position: Int) {
+    private fun showDatePickerDialogForTask(task: Task, position: Int) {
         val calendar = Calendar.getInstance()
-
         val datePickerDialog = DatePickerDialog(
             requireContext(),
             { _, year, month, dayOfMonth ->
                 val selectedCalendar = Calendar.getInstance()
                 selectedCalendar.set(year, month, dayOfMonth)
-
-                // Complete the task with the selected date
-                completeTaskWithDate(position, Timestamp(Date(selectedCalendar.timeInMillis)))
+                val selectedTimestamp = Timestamp(Date(selectedCalendar.timeInMillis))
+                completeTaskWithSelectedDate(task, selectedTimestamp, position)
             },
             calendar.get(Calendar.YEAR),
             calendar.get(Calendar.MONTH),
             calendar.get(Calendar.DAY_OF_MONTH)
         )
-
         datePickerDialog.show()
     }
 
-    private fun editTask(position: Int) {
-        // Get the task from the list
-        val task = viewModel.tasks.value[position]
-
-        // Show the dialog to edit the task
+    private fun editTaskBySwipe(position: Int) {
+        val displayTask = taskAdapter.displayTasks.getOrNull(position) ?: return
+        val task = displayTask.task
         val dialogFragment = AddModTaskDialogFragment.newInstance(task)
         dialogFragment.setAddModTaskListener(this)
         dialogFragment.show(parentFragmentManager, AddModTaskDialogFragment.TAG)
     }
 
-    private fun confirmDeleteTask(position: Int) {
-        // Get the task from the list
-        val task = viewModel.tasks.value[position]
-
+    private fun confirmDeleteTaskBySwipe(position: Int) {
+        val displayTask = taskAdapter.displayTasks.getOrNull(position) ?: return
+        val task = displayTask.task
         MaterialAlertDialogBuilder(requireContext())
             .setTitle("Delete Task")
             .setMessage("Are you sure you want to delete '${task.title}'?")
             .setPositiveButton("Delete") { _, _ ->
-                deleteTask(task)
+                deleteTaskFromViewModel(task)
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton("Cancel") { _, _ ->
+                taskAdapter.notifyItemChanged(position) // Reset swipe state
+            }
+            .setOnDismissListener {
+                taskAdapter.notifyItemChanged(position) // Ensure swipe is reset if dialog is dismissed
+            }
             .show()
     }
 
-    private fun deleteTask(task: Task) {
-        // Delete the task from ViewModel
+    private fun deleteTaskFromViewModel(task: Task) {
         viewModel.deleteTask(task)
+        // Snackbar with UNDO for local-only deletion is tricky because the item might disappear fast.
+        // The current setup: ViewModel marks for deletion, sync manager handles actual deletion.
+        // UI updates reactively.
+        showSnackbar("Task '${task.title}' marked for deletion.")
+    }
 
-        // Show a snackbar with undo option
-        Snackbar.make(requireView(), "Task '${task.title}' deleted", Snackbar.LENGTH_LONG)
-            .setAction("UNDO") {
-                //TODO: implement undo
+    // Triggered by SWIPE RIGHT
+    private fun completeTaskBySwipe(position: Int) {
+        val displayTask = taskAdapter.displayTasks.getOrNull(position) ?: run {
+            taskAdapter.notifyItemChanged(position) // Reset swipe if item not found
+            return
+        }
+        val task = displayTask.task
+        Log.d(TAG, "completeTaskBySwipe: ${task.title}")
+
+        val isNewForSession = taskAdapter.getSessionCompletionCount(task.id) == 0
+        // Delegate to the common completion logic
+        onTaskMarkedComplete(task, isNewForSession)
+        // No direct notifyItemChanged(position) here, as onTaskMarkedComplete handles it.
+    }
+
+
+    // Triggered by selecting a date in DatePickerDialog
+    private fun completeTaskWithSelectedDate(task: Task, completedAt: Timestamp, position: Int) {
+        val currentUserId = userRepository.getCurrentUserId()
+        if (currentUserId != null) {
+            // 1. Increment session count in adapter
+            taskAdapter.incrementSessionCompletionCount(task.id)
+            if (position != -1) { // Check if position is valid
+                taskAdapter.notifyItemChanged(position) // Update UI for session count
             }
-            .show()
-    }
 
+            // 2. Record in ViewModel with specific date
+            viewModel.recordTaskCompletion(task, currentUserId, completedAt)
 
-
-//    private fun recordTaskCompletion(task: Task, userId: String, completedAt: Timestamp? = null) {
-//        lifecycleScope.launch {
-//            taskHistoryRepository.get().recordTaskCompletion(task.id, userId, task.points, completedAt?.toDate(), requireContext())
-//        }
-//    }
-    private fun completeTask(position: Int) {
-        // Get the task from the list
-        val task = viewModel.tasks.value[position]
-
-        // Get the current user ID
-        val currentUserId = userRepository.getCurrentUserId()
-
-        if (currentUserId != null) {
-            // Update the UI
-            taskAdapter.notifyItemChanged(position)
-
-            // Show a snackbar with undo option
-            showCompletionSnackbar(task)
-
-            // Update user score (would normally be in ViewModel)
-            updateUserScore(task.points) // This should ideally be in ViewModel
-
-            // Record task completion in local DB
-            viewModel.recordTaskCompletion(task, currentUserId) // Pass the actual user ID
-
-            taskAdapter.incrementCompletionCount(task.id)
-
-            //completeTaskWithDate(position)
+            val currentSessionCount = taskAdapter.getSessionCompletionCount(task.id)
+            showSnackbar("'${task.title}' marked complete on ${completedAt.toDate( )}! (Session: $currentSessionCount)")
+            //updateUserScore(task.points)
         } else {
-            // Handle case where user is not logged in
-            showSnackbar("Error: User not logged in. Cannot complete task.")
+            showSnackbar("Error: User not logged in.")
+            if (position != -1) taskAdapter.notifyItemChanged(position) // Reset UI if needed
         }
     }
 
-    private fun completeTaskWithDate(position: Int, completedAt: Timestamp? = null) {
-        // Get the task from the list
-        val task = viewModel.tasks.value[position]
-
-        // Get the current user ID
-        val currentUserId = userRepository.getCurrentUserId()
-
-        if (currentUserId != null) {
-            // Update the UI
-            taskAdapter.notifyItemChanged(position)
-
-            // Show a snackbar with undo option
-            showCompletionSnackbar(task)
-
-            // Update user score (would normally be in ViewModel)
-            updateUserScore(task.points) // This should ideally be in ViewModel
-
-            // Record task completion in local DB
-            viewModel.recordTaskCompletion(task, currentUserId, completedAt) // Pass the actual user ID
-
-            taskAdapter.incrementCompletionCount(task.id)
-        } else {
-            // Handle case where user is not logged in
-            showSnackbar("Error: User not logged in. Cannot complete task.")
+    // Triggered by SWIPE LEFT
+    private fun undoTaskCompletionBySwipe(position: Int) {
+        val displayTask = taskAdapter.displayTasks.getOrNull(position) ?: run {
+            taskAdapter.notifyItemChanged(position) // Reset swipe if item not found
+            return
         }
-    }
+        val task = displayTask.task
+        Log.d(TAG, "undoTaskCompletionBySwipe for: ${task.title}")
 
-
-
-    private fun undoTaskCompletion(position: Int) {
-        // Get the task from the list
-        val task = viewModel.tasks.value.getOrNull(position) ?: return // Safeguard
         val currentSessionCompletions = taskAdapter.getSessionCompletionCount(task.id)
 
         if (currentSessionCompletions > 0) {
-            // There's a session completion to undo from the UI perspective
-            taskAdapter.decrementCompletionCount(task.id) // This will update the UI checkmark/counter
+            // 1. UI: Decrement session count first for immediate feedback
+            taskAdapter.decrementSessionCompletionCount(task.id)
+            taskAdapter.notifyItemChanged(position) // Update UI checkmark/counter
 
-            // Now, proceed to undo the LATEST persisted completion in the database
+            // 2. DB: Proceed to undo the LATEST persisted completion
             lifecycleScope.launch {
                 val currentUserId = userRepository.getCurrentUserId()
                 if (currentUserId == null) {
-                    showSnackbar("Error: User not logged in. Cannot undo task completion.")
-                    // Optional: If user isn't logged in, but we "undid" a session count,
-                    // we might want to increment it back if the DB operation fails.
-                    // However, decrementing first gives immediate UI feedback.
-                    // taskAdapter.incrementCompletionCount(task.id) // Revert UI if DB undo fails due to no user
+                    showSnackbar("Error: User not logged in. Cannot undo database record.")
+                    // Revert session count decrement if DB operation can't proceed
+                    taskAdapter.incrementSessionCompletionCount(task.id)
+                    taskAdapter.notifyItemChanged(position)
                     return@launch
                 }
 
@@ -340,84 +300,64 @@ class TaskListFragment : Fragment(), AddModTaskDialogFragment.AddModTaskListener
                 if (latestTaskHistoryId != null) {
                     val undoSuccessful = viewModel.undoTaskCompletionSuspend(latestTaskHistoryId)
                     if (undoSuccessful) {
-                        showUndoCompletionSnackbar(task)
-                        // UI already updated by taskAdapter.decrementCompletionCount
+                        showUndoCompletionSnackbar(task) // Includes points
+                       // updateUserScore(-task.points) // Deduct points
+                        // "Last done by/on" will update when displayTasks flow re-emits.
                     } else {
-                        // DB undo failed (e.g., history record already deleted, or some other issue)
-                        // Since we already decremented the session count, we should revert that UI change
-                        // if the DB operation wasn't successful, to keep UI consistent with what's undoable.
-                        taskAdapter.incrementCompletionCount(task.id) // Revert UI change
-                        showSnackbar("Failed to undo the last recorded completion.") // More specific
+                        showSnackbar("Failed to undo the last recorded completion in database.")
+                        // Revert session count decrement as DB undo failed
+                        taskAdapter.incrementSessionCompletionCount(task.id)
+                        taskAdapter.notifyItemChanged(position)
                     }
                 } else {
                     // No persisted completion found in DB to match the UI session undo.
-                    // This is an interesting state: UI showed it was completed in session, but DB has nothing.
-                    // This could happen if completions were only in session and app was restarted before DB sync.
-                    // Or if all DB completions were already undone through other means.
-                    // Revert the UI session decrement as there's no corresponding DB action.
-                    taskAdapter.incrementCompletionCount(task.id) // Revert UI change
-                    showSnackbar("No recorded completion found to undo.")
+                    showSnackbar("No recorded completion found in database to undo for this task.")
+                    // Revert session count decrement as there's no corresponding DB action.
+                    taskAdapter.incrementSessionCompletionCount(task.id)
+                    taskAdapter.notifyItemChanged(position)
                 }
             }
         } else {
-            // No completions in the current session for this task.
-            // The swipe-left-to-undo shouldn't do anything or should indicate it can't be done.
-           // showCantUndoSnackbar() // "Nothing to undo for this task in the current session."
-            // We also need to tell the ItemTouchHelper to reset the item's swipe state
-            // because the swipe was initiated but we determined no action should be taken.
-            showSnackbar("You need to complete the task before it can be undone.")
-            taskAdapter.notifyItemChanged(position) // This resets the swipe
+            showSnackbar("No completions in this session to undo for '${task.title}'.")
+            taskAdapter.notifyItemChanged(position) // Reset swipe
         }
     }
 
-    private fun showCompletionSnackbar(task: Task) {
+
+
+    private fun showCompletionSnackbar(task: Task) { // Generic, used by swipe
         val message = "Task '${task.title}' completed: +${task.points} points"
-
-        Snackbar.make(requireView(), message, Snackbar.LENGTH_LONG)
-            .show()
+        Snackbar.make(requireView(), message, Snackbar.LENGTH_SHORT).show()
     }
-
 
     private fun showUndoCompletionSnackbar(task: Task) {
         Snackbar.make(
             requireView(),
-            "Task '${task.title}' completion undone: -${task.points} points",
-            Snackbar.LENGTH_LONG
+            "Completion of '${task.title}' undone: -${task.points} points",
+            Snackbar.LENGTH_SHORT
         ).show()
     }
-
-
 
     private fun showSnackbar(message: String) {
         Snackbar.make(requireView(), message, Snackbar.LENGTH_SHORT).show()
     }
 
-    private fun updateUserScore(points: Int) {
-        //TODO
-        // This would normally update the user's score in a repository or ViewModel
-        // For now, just log the score change
-        println("User score updated: $points points")
-    }
+//    private fun updateUserScore(points: Int) {
+//        // TODO: Implement actual score update logic (e.g., in ViewModel or UserRepository)
+//        Log.i(TAG, "User score updated by: $points points. (Current total: Not tracked in fragment)")
+//        // Example: viewModel.updateUserScore(points)
+//    }
 
-    private fun updateUI(tasks: List<Task>) {
-        if (tasks.isEmpty()) {
-            showEmptyState()
+    // Changed to accept List<DisplayTask>
+    private fun updateUIWithDisplayTasks(displayTasks: List<DisplayTask>) {
+        if (displayTasks.isEmpty()) {
+            recyclerView.visibility = View.GONE
+            emptyView.visibility = View.VISIBLE
+            emptyView.text = getString(R.string.tasks_empty_message, "tasks") // Keep context for "tasks"
         } else {
-            showTasks(tasks)
+            recyclerView.visibility = View.VISIBLE
+            emptyView.visibility = View.GONE
         }
-    }
-
-    private fun showEmptyState() {
-        recyclerView.visibility = View.GONE
-        emptyView.visibility = View.VISIBLE
-        emptyView.text = getString(R.string.tasks_empty_message, "tasks")
-    }
-
-    private fun showTasks(tasks: List<Task>) {
-        recyclerView.visibility = View.VISIBLE
-        emptyView.visibility = View.GONE
-
-        // Notify the adapter that the data has changed
-        taskAdapter.setTasks(tasks)
+        taskAdapter.setTasks(displayTasks) // Pass List<DisplayTask>
     }
 }

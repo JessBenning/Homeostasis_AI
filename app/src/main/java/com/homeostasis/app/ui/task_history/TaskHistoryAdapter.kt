@@ -12,7 +12,6 @@ import androidx.recyclerview.widget.RecyclerView
 //import androidx.wear.compose.material.placeholder
 import com.bumptech.glide.Glide // Assuming you'll use Glide for image loading
 import com.homeostasis.app.R
-import com.homeostasis.app.ui.task_history.TaskHistoryFeedItem // Import your sealed class
 import com.homeostasis.app.ui.task_history.TaskHistoryFeedItem.TaskHistoryItem
 import com.homeostasis.app.ui.task_history.TaskHistoryFeedItem.UserScoreSummaryItem
 import com.homeostasis.app.data.Converters
@@ -112,7 +111,7 @@ class TaskHistoryAdapter :
             }
             VIEW_TYPE_TASK_HISTORY_LOG -> {
                 val view = LayoutInflater.from(parent.context)
-                    .inflate(R.layout.item_task_history_log, parent, false) // Ensure this XML is correct
+                    .inflate(R.layout.item_task_history, parent, false) // Ensure this XML is correct
                 TaskHistoryLogViewHolder(view)
             }
             else -> throw IllegalArgumentException("Invalid view type: $viewType")

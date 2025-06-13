@@ -44,8 +44,8 @@ class ProfileSettingsViewModel @Inject constructor(
     private fun loadUserProfile() {
         viewModelScope.launch {
             userRepository.getCurrentUserId()?.let { userId ->
-                val result = userRepository.getUserById(userId)
-                _userProfile.postValue(result.getOrNull())
+                val result = userRepository.getUser(userId)
+                _userProfile.postValue(result)//.getOrNull())
             }
         }
     }
