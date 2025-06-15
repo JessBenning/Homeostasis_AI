@@ -12,12 +12,14 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import com.bumptech.glide.Glide
+import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.bumptech.glide.request.RequestOptions
 import com.homeostasis.app.databinding.FragmentProfileSettingsBinding
 import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.qualifiers.ApplicationContext // Import ApplicationContext
 import java.io.File // Import File
 import javax.inject.Inject
+import com.bumptech.glide.signature.ObjectKey
 
 @AndroidEntryPoint
 class ProfileSettingsFragment : Fragment() {
@@ -51,24 +53,27 @@ class ProfileSettingsFragment : Fragment() {
 
         // Observe user profile data
         viewModel.userProfile.observe(viewLifecycleOwner) { user ->
-            user?.let { user -> // Renamed to 'user' for clarity
-                binding.editTextName.setText(user.name)
+            user?.let { currentUser -> // Renamed to 'user' for clarity
+                binding.editTextName.setText(currentUser.name)
 
                 // Derive the local profile picture file path
-                val localFilePath = File(appContext.filesDir, "profile_picture_${user.id}.jpg").absolutePath
+                val localFilePath = File(appContext.filesDir, "profile_picture_${currentUser.id}.jpg").absolutePath
                 val localFile = File(localFilePath)
+                val imageSignature = localFile.lastModified().toString()
 
                 if (localFile.exists()) {
                     // Load from local file if it exists
                     Glide.with(this)
                         .load(localFile)
+                        .signature(ObjectKey(imageSignature))
                         .apply(RequestOptions.circleCropTransform())
                         .placeholder(com.homeostasis.app.R.drawable.ic_default_profile) // Use a default image
                         .into(binding.imageViewProfilePicture)
-                } else if (user.profileImageUrl.isNotEmpty()) {
+
+                } else if (currentUser.profileImageUrl.isNotEmpty()) {
                     // Load from remote URL if local file doesn't exist and remote URL is available
                     Glide.with(this)
-                        .load(user.profileImageUrl)
+                        .load(currentUser.profileImageUrl)
                         .apply(RequestOptions.circleCropTransform())
                         .placeholder(com.homeostasis.app.R.drawable.ic_default_profile) // Use a default image
                         .into(binding.imageViewProfilePicture)

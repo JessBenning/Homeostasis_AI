@@ -10,8 +10,9 @@ sealed interface TaskHistoryFeedItem {
     data class UserScoreSummaryItem(
         val userId: String,
         val userName: String,
-        val userProfilePicUrl: String?, // This will store the local file path
-        val totalScore: Int
+        val userProfilePicLocalPath: String?, // This will store the local file path
+        val totalScore: Int,
+        val userProfilePicSignature: String // New: To be used as Glide signature (e.g., lastModifiedAt.toEpochMilli().toString())
     ) : TaskHistoryFeedItem
 
     /**
@@ -22,10 +23,9 @@ sealed interface TaskHistoryFeedItem {
         val taskTitle: String,
         val completedAt: Timestamp,
         val points: Int,
+        val completedByUserId: String, // It's good to have the ID
         val completedByUserName: String,
-        val completedByUserProfilePicUrl: String? // This will store the local file path
+        val completedByUserProfilePicLocalPath: String?, // This will store the local file path
+        val completedByUserProfilePicSignature: String // New: Signature for the completer's profile pic
     ) : TaskHistoryFeedItem
-
-    // Optional: Add other item types if needed for this specific feed
-    // data class DateSeparatorItem(val date: String) : TaskHistoryFeedItem
 }

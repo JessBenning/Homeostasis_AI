@@ -1,32 +1,34 @@
 package com.homeostasis.app.ui.profile
 
 import androidx.lifecycle.ViewModel
-import android.content.Context // Import Context
+import android.content.Context
+import android.util.Log
 import androidx.lifecycle.viewModelScope
-import com.homeostasis.app.data.UserDao // Import UserDao
-import com.homeostasis.app.data.HouseholdGroupIdProvider // Import HouseholdGroupIdProvider
+import com.homeostasis.app.data.UserDao
+import com.homeostasis.app.data.HouseholdGroupIdProvider
 import com.homeostasis.app.data.remote.UserRepository
 import com.homeostasis.app.utils.ImageUtils
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
-import androidx.lifecycle.viewModelScope
+// viewModelScope is already imported
 import com.homeostasis.app.data.model.User
+import com.google.firebase.Timestamp // <<< ADD THIS IMPORT
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext // Import ApplicationContext
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.first // Import first
-import java.io.File // Import File
-import java.io.FileOutputStream // Import FileOutputStream
-import java.io.IOException // Import IOException
+import kotlinx.coroutines.flow.first
+import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
 import javax.inject.Inject
 
 @HiltViewModel
 class ProfileSettingsViewModel @Inject constructor(
-    private val userRepository: UserRepository, // Keep UserRepository for loading data
-    private val userDao: UserDao, // Inject UserDao
-    private val householdGroupIdProvider: HouseholdGroupIdProvider, // Inject HouseholdGroupIdProvider
-    private val imageUtils: ImageUtils, // Inject ImageUtils
-    @ApplicationContext private val context: Context // Inject ApplicationContext
+    private val userRepository: UserRepository,
+    private val userDao: UserDao,
+    private val householdGroupIdProvider: HouseholdGroupIdProvider,
+    private val imageUtils: ImageUtils,
+    @ApplicationContext private val context: Context
 ) : ViewModel() {
 
     private val _userProfile = MutableLiveData<User?>()
@@ -43,100 +45,104 @@ class ProfileSettingsViewModel @Inject constructor(
 
     private fun loadUserProfile() {
         viewModelScope.launch {
+            // Consider fetching from local UserDao first for faster initial load,
+            // then optionally refresh from remote if needed or let sync manager handle updates.
             userRepository.getCurrentUserId()?.let { userId ->
-                val result = userRepository.getUser(userId)
-                _userProfile.postValue(result)//.getOrNull())
+                // Example: Fetch from local first
+                val localUser = householdGroupIdProvider.getHouseholdGroupId().first()?.let { hid ->
+                    userDao.getUserById(userId, hid)
+                }
+                if (localUser != null) {
+                    _userProfile.postValue(localUser)
+                } else {
+                    // Fallback to remote if not found locally or if you prefer remote first
+                    val remoteUser = userRepository.getUser(userId)
+                    _userProfile.postValue(remoteUser)
+                }
             }
         }
     }
 
-    /**
-     * Handles the selected image URI, processes it, and stores the result.
-     */
     fun handleImageSelection(context: android.content.Context, imageUri: android.net.Uri) {
         viewModelScope.launch {
             val bitmap = imageUtils.decodeUriToBitmap(context, imageUri)
             bitmap?.let {
-                val resizedBitmap = ImageUtils.resizeBitmap(it, 250) // Minimum size 250x250
-                val compressedBytes = ImageUtils.compressBitmapToByteArray(resizedBitmap, 1 * 1024 * 1024) // Max 1MB
+                val resizedBitmap = ImageUtils.resizeBitmap(it, 250)
+                val compressedBytes = ImageUtils.compressBitmapToByteArray(resizedBitmap, 1 * 1024 * 1024)
                 selectedImageBytes = compressedBytes
-                _selectedImagePreview.postValue(compressedBytes) // Update LiveData for preview
+                _selectedImagePreview.postValue(compressedBytes)
             } ?: run {
-                _selectedImagePreview.postValue(null) // Clear preview if decoding fails
+                _selectedImagePreview.postValue(null)
             }
         }
     }
 
-
-    /**
-     * Saves the user profile with the given name and selected image to the local database.
-     * The sync manager will handle pushing changes to the remote database.
-     */
     fun saveProfile(name: String) {
         viewModelScope.launch {
             val userId = userRepository.getCurrentUserId()
             val householdGroupId = householdGroupIdProvider.getHouseholdGroupId().first()
 
             if (userId != null && householdGroupId != null) {
-                // Get the current user from the local DB to preserve other fields
                 val existingUser = userDao.getUserById(userId, householdGroupId)
+                val currentTime = Timestamp.now() // Get current time once
+
+                var localImageSaveSuccess = true // Assume success unless it fails
+                selectedImageBytes?.let { bytes ->
+                    try {
+                        val file = File(context.filesDir, "profile_picture_$userId.jpg")
+                        FileOutputStream(file).use { fos ->
+                            fos.write(bytes)
+                        }
+                        Log.d("ProfileSettingsVM", "New profile image saved locally to: ${file.absolutePath}")
+                        selectedImageBytes = null // Clear temporary bytes after successful save
+                    } catch (e: IOException) {
+                        e.printStackTrace()
+                        localImageSaveSuccess = false
+                        Log.e("ProfileSettingsVM", "Error saving image locally", e)
+                        // TODO: Handle local file save error (e.g., show a message to the user)
+                    }
+                }
+
+                // Proceed with DB update only if local image save was successful (if an image was selected)
+                if (!localImageSaveSuccess && selectedImageBytes != null /* check if image was selected to ensure error is relevant */) {
+                    // Don't update DB if critical image save failed.
+                    // Or, decide if DB update (like name) should proceed anyway.
+                    // For now, let's assume if image was selected & failed, we might stop.
+                    Log.e("ProfileSettingsVM", "Aborting profile save due to image save failure.")
+                    // TODO: Notify user of failure
+                    return@launch
+                }
+
 
                 if (existingUser != null) {
-                   // If a new image was selected, save it locally
-                   selectedImageBytes?.let { bytes ->
-                       try {
-                           val file = File(context.filesDir, "profile_picture_$userId.jpg") // Consistent local file path
-                           FileOutputStream(file).use { fos ->
-                               fos.write(bytes)
-                           }
-                           selectedImageBytes = null // Clear temporary bytes
-                           // TODO: Handle local file save success/failure
-                       } catch (e: IOException) {
-                           e.printStackTrace()
-                           // TODO: Handle local file save error
-                       }
-                   }
-
-                   // Update the local user with the new name and mark for sync.
-                   // profileImageUrl remains the remote URL.
-                   val updatedUser = existingUser.copy(
-                       name = name,
-                       needsSync = true // Mark for sync
-                   )
-
+                    val updatedUser = existingUser.copy(
+                        name = name,
+                        lastModifiedAt = currentTime, // <<< SET/UPDATE lastModifiedAt
+                        needsSync = true
+                    )
                     userDao.upsertUser(updatedUser)
-                    // TODO: Handle save result (success/failure) - check upsertUser result if needed
+                    Log.d("ProfileSettingsVM", "Existing user ${updatedUser.id} updated in local DB. New lastModifiedAt: ${currentTime.toDate()}")
+                    _userProfile.postValue(updatedUser) // Optionally update LiveData for the current screen
                 } else {
-                   // Local user data not found, create a new User object
-                   // If a new image was selected, save it locally
-                   selectedImageBytes?.let { bytes ->
-                       try {
-                           val file = File(context.filesDir, "profile_picture_$userId.jpg") // Consistent local file path
-                           FileOutputStream(file).use { fos ->
-                               fos.write(bytes)
-                           }
-                           selectedImageBytes = null // Clear temporary bytes
-                           // TODO: Handle local file save success/failure
-                       } catch (e: IOException) {
-                           e.printStackTrace()
-                           // TODO: Handle local file save error
-                       }
-                   }
-
-                   val newUser = User(
-                       id = userId,
-                       name = name,
-                       profileImageUrl = "", // profileImageUrl should be empty initially for a new user
-                       householdGroupId = householdGroupId,
-                       needsSync = true // Mark for sync
-                       // Other fields will use their default values
-                   )
-                   userDao.upsertUser(newUser)
-                   // TODO: Handle save result (success/failure)
-               }
-           } else {
-               // TODO: Handle case where userId or householdGroupId is null (e.g., show error message)
-           }
-       }
-   }
+                    // Create new user
+                    val newUser = User(
+                        id = userId,
+                        name = name,
+                        profileImageUrl = "", // This should be updated by sync manager when remote URL is available
+                        householdGroupId = householdGroupId,
+                        createdAt = currentTime,      // <<< SET createdAt for new user
+                        lastModifiedAt = currentTime, // <<< SET lastModifiedAt for new user
+                        needsSync = true
+                        // Ensure other User fields have appropriate defaults or are set here
+                    )
+                    userDao.upsertUser(newUser)
+                    Log.d("ProfileSettingsVM", "New user ${newUser.id} created in local DB. lastModifiedAt: ${currentTime.toDate()}")
+                    _userProfile.postValue(newUser) // Optionally update LiveData
+                }
+            } else {
+                Log.w("ProfileSettingsVM", "Cannot save profile, userId or householdGroupId is null.")
+                // TODO: Handle case where userId or householdGroupId is null
+            }
+        }
+    }
 }

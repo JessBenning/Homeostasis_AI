@@ -19,7 +19,7 @@
         app:layout_constraintHorizontal_bias="1.0"
         app:layout_constraintStart_toEndOf="@+id/log_item_completed_by_user_profile_picture"
         app:layout_constraintTop_toTopOf="parent"
-        tools:text="Reviewed Project Proposal and Gave Feedback" />
+        tools:text="Complete Project review and Gave Feedback " />
 
     <TextView
         android:id="@+id/log_item_points"
@@ -37,8 +37,9 @@
         android:id="@+id/log_item_completed_by_user_profile_picture"
         android:layout_width="38dp"
         android:layout_height="40dp"
+        app:layout_constraintBottom_toBottomOf="@+id/log_item_task_name"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintTop_toTopOf="@+id/log_item_task_name"
         tools:src="@drawable/ic_default_profile" />
 
     <TextView

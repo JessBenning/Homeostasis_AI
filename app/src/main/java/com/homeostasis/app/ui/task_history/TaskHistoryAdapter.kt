@@ -11,6 +11,8 @@ import androidx.recyclerview.widget.ListAdapter // Import ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 //import androidx.wear.compose.material.placeholder
 import com.bumptech.glide.Glide // Assuming you'll use Glide for image loading
+import com.bumptech.glide.load.engine.DiskCacheStrategy
+import com.bumptech.glide.signature.ObjectKey
 import com.homeostasis.app.R
 import com.homeostasis.app.ui.task_history.TaskHistoryFeedItem.TaskHistoryItem
 import com.homeostasis.app.ui.task_history.TaskHistoryFeedItem.UserScoreSummaryItem
@@ -41,53 +43,79 @@ import com.homeostasis.app.data.Converters
 //     ) : TaskHistoryFeedItem()
 // }
 
-
 class TaskHistoryAdapter :
     ListAdapter<TaskHistoryFeedItem, RecyclerView.ViewHolder>(TaskHistoryFeedItemDiffCallback()) {
 
-    // Define ViewHolders inside or outside, but they need to be accessible
-    // UserScoreSummaryItem ViewHolder
     class UserScoreSummaryViewHolder(view: View) : RecyclerView.ViewHolder(view) {
         private val userProfilePicture: ImageView = view.findViewById(R.id.user_profile_picture)
         private val userName: TextView = view.findViewById(R.id.user_name)
-        private val userScore: TextView = view.findViewById(R.id.user_score) // Make sure ID matches your XML
+        private val userScore: TextView = view.findViewById(R.id.user_score)
 
         fun bind(item: UserScoreSummaryItem) {
             userName.text = item.userName
-            userScore.text = itemView.context.getString(R.string.profile_current_score, item.totalScore) // Example: "Score: 100"
+            userScore.text = itemView.context.getString(R.string.profile_current_score, item.totalScore)
 
-            Glide.with(itemView.context)
-                .load(item.userProfilePicUrl)
-                .placeholder(R.drawable.ic_default_profile) // Add a default placeholder
-                .error(R.drawable.ic_profile_load_error) // Add an error placeholder
-                .circleCrop()
-                .into(userProfilePicture)
+            // Ensure userProfilePicLocalPath and userProfilePicSignature are present in your UserScoreSummaryItem data class
+            item.userProfilePicLocalPath?.let { path ->
+                Glide.with(itemView.context)
+                    .load(path) // Load from the local file path
+                    .signature(ObjectKey(item.userProfilePicSignature ?: System.currentTimeMillis().toString())) // Add signature
+                    .diskCacheStrategy(DiskCacheStrategy.NONE) // Do not cache to disk based on path alone
+                    .skipMemoryCache(true) // Do not cache in memory based on path alone
+                    .placeholder(R.drawable.ic_default_profile)
+                    .error(R.drawable.ic_profile_load_error)
+                    .circleCrop()
+                    .into(userProfilePicture)
+            } ?: run {
+                // Fallback if local path is null
+                Glide.with(itemView.context)
+                    .load(R.drawable.ic_default_profile)
+                    .circleCrop()
+                    .into(userProfilePicture)
+            }
         }
     }
 
-    // TaskHistoryLogItem ViewHolder
     class TaskHistoryLogViewHolder(view: View) : RecyclerView.ViewHolder(view) {
-        // Ensure these IDs match your item_task_history_log.xml
         private val taskName: TextView = view.findViewById(R.id.log_item_task_name)
         private val points: TextView = view.findViewById(R.id.log_item_points)
         private val completedBy: TextView = view.findViewById(R.id.log_item_completed_by)
         private val completedDate: TextView = view.findViewById(R.id.log_item_completed_date)
-        private val completedByUserProfilePicture: ImageView = view.findViewById(R.id.log_item_completed_by_user_profile_picture) // Add this
-
+        private val completedByUserProfilePicture: ImageView =
+            view.findViewById(R.id.log_item_completed_by_user_profile_picture)
 
         fun bind(item: TaskHistoryItem) {
             taskName.text = item.taskTitle
-            points.text = itemView.context.getString(R.string.task_history_points, item.points) // Example "+25 pts"
-            completedBy.text = itemView.context.getString(R.string.task_history_completed_by, item.completedByUserName) // Example: "Completed by: John"
+            points.text = itemView.context.getString(R.string.task_history_points, item.points)
+            completedBy.text =
+                itemView.context.getString(R.string.task_history_completed_by, item.completedByUserName)
+            // Assuming item.completedAt is a com.google.firebase.Timestamp
             completedDate.text = Converters.formatTimestampToString(item.completedAt)
 
-            // Load the profile picture using Glide from the local file path
-            Glide.with(itemView.context)
-                .load(item.completedByUserProfilePicUrl) // Load from the local file path
-                .placeholder(R.drawable.ic_default_profile) // Add a default placeholder
-                .error(R.drawable.ic_profile_load_error) // Add an error placeholder
-                .circleCrop()
-                .into(completedByUserProfilePicture) // Load into the new ImageView
+
+            // Ensure completedByUserProfilePicLocalPath and completedByUserProfilePicSignature are in your TaskHistoryItem
+            item.completedByUserProfilePicLocalPath?.let { path ->
+                Glide.with(itemView.context)
+                    .load(path) // Load from the local file path
+                    .signature(
+                        ObjectKey(
+                            item.completedByUserProfilePicSignature ?: System.currentTimeMillis()
+                                .toString()
+                        )
+                    ) // Add signature
+                    .diskCacheStrategy(DiskCacheStrategy.NONE) // Do not cache to disk based on path alone
+                    .skipMemoryCache(true) // Do not cache in memory based on path alone
+                    .placeholder(R.drawable.ic_default_profile)
+                    .error(R.drawable.ic_profile_load_error)
+                    .circleCrop()
+                    .into(completedByUserProfilePicture)
+            } ?: run {
+                // Fallback if local path is null
+                Glide.with(itemView.context)
+                    .load(R.drawable.ic_default_profile)
+                    .circleCrop()
+                    .into(completedByUserProfilePicture)
+            }
         }
     }
 
