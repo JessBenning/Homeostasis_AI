@@ -38,6 +38,22 @@ class MainActivity : AppCompatActivity() {
             .findFragmentById(R.id.nav_host_fragment) as NavHostFragment
         navController = navHostFragment.navController
 
+        // Get the navigation graph
+        val navGraph = navController.navInflater.inflate(R.navigation.nav_graph) // Assuming nav_graph is your navigation graph file
+
+        // Check if user is signed in on app startup
+        val currentUser = userRepository.getCurrentUser()
+        if (currentUser == null) {
+            // User is not signed in, set start destination to auth screen
+            navGraph.setStartDestination(R.id.navigation_auth)
+        } else {
+            // User is signed in, set start destination to main content (e.g., tasks)
+            navGraph.setStartDestination(R.id.navigation_tasks) // Assuming navigation_tasks is your main screen destination ID
+        }
+
+        // Set the modified graph to the navController
+        navController.graph = navGraph
+
         // Set up bottom navigation
         val bottomNav = findViewById<BottomNavigationView>(R.id.bottom_navigation)
         bottomNav.setupWithNavController(navController)
@@ -95,13 +111,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
-
-        // Check if user is signed in
-        val currentUser = userRepository.getCurrentUser()
-        if (currentUser == null) {
-            // User is not signed in, navigate to auth screen
-            navController.navigate(R.id.navigation_auth)
-        }
+        // Authentication check moved to onCreate for initial startup
     }
 
     override fun onSupportNavigateUp(): Boolean {
