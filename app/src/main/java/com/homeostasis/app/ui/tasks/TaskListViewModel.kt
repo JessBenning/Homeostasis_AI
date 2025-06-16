@@ -84,7 +84,10 @@ class TaskListViewModel @Inject constructor(
                             // For simplicity, re-fetching or using the one from flatMapLatest's scope:
                             val currentHId = householdGroupId // Use the householdGroupId from the outer flatMapLatest scope
 
-                            tasksFromDb.map { task ->
+                            val sortedTasksFromDb = tasksFromDb.sortedBy { it.title.lowercase() } // Sort by lowercase title for case-insensitive sort
+
+
+                            sortedTasksFromDb.map { task ->
                                 async(viewModelScope.coroutineContext) {
                                     val latestHistory = taskHistoryDao.getLatestTaskHistoryForTask(task.id, currentHId)
                                     var lastCompletedByName: String? = null // Default to null, then "N/A" if still null after check

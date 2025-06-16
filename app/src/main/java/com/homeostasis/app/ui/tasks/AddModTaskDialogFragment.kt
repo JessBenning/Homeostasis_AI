@@ -38,9 +38,9 @@ class AddModTaskDialogFragment : DialogFragment() {
     // UI components
     private lateinit var dialogTitle: TextView
     private lateinit var titleEditText: TextInputEditText
-    private lateinit var descriptionEditText: TextInputEditText
+ //   private lateinit var descriptionEditText: TextInputEditText
     private lateinit var pointsEditText: TextInputEditText
-    private lateinit var categoryDropdown: AutoCompleteTextView
+ //   private lateinit var categoryDropdown: AutoCompleteTextView
     private lateinit var saveButton: MaterialButton
     private lateinit var cancelButton: MaterialButton
 
@@ -60,14 +60,14 @@ class AddModTaskDialogFragment : DialogFragment() {
         titleEditText = view.findViewById(R.id.task_title_edit_text)
        // descriptionEditText = view.findViewById(R.id.task_description_edit_text)
         pointsEditText = view.findViewById(R.id.task_points_edit_text)
-        categoryDropdown = view.findViewById(R.id.task_category_dropdown)
+       // categoryDropdown = view.findViewById(R.id.task_category_dropdown)
         saveButton = view.findViewById(R.id.save_button)
         cancelButton = view.findViewById(R.id.cancel_button)
 
         // Set up category dropdown
-        val categories = listOf("Household", "Work", "Personal", "Other") // Placeholder categories
-        val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_dropdown_item_1line, categories)
-        categoryDropdown.setAdapter(adapter)
+     //   val categories = listOf("Household", "Work", "Personal", "Other") // Placeholder categories
+     //   val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_dropdown_item_1line, categories)
+     //   categoryDropdown.setAdapter(adapter)
 
         // Set up UI based on whether we're adding or editing a task
         setupUI()
@@ -102,14 +102,14 @@ class AddModTaskDialogFragment : DialogFragment() {
             titleEditText.setText(existingTask!!.title)
       //      descriptionEditText.setText(existingTask!!.description)
             pointsEditText.setText(existingTask!!.points.toString())
-            categoryDropdown.setText(existingTask!!.categoryId)
+       //     categoryDropdown.setText(existingTask!!.categoryId)
         }
     }
 
     private fun validateInputs(): Boolean {
         val title = titleEditText.text.toString().trim()
         val points = pointsEditText.text.toString().trim()
-        val category = categoryDropdown.text.toString().trim()
+//        val category = categoryDropdown.text.toString().trim()
 
         if (title.isEmpty()) {
             titleEditText.error = "Title is required"
@@ -121,10 +121,10 @@ class AddModTaskDialogFragment : DialogFragment() {
             return false
         }
 
-        if (category.isEmpty()) {
-            categoryDropdown.error = "Category is required"
-            return false
-        }
+//        if (category.isEmpty()) {
+//            categoryDropdown.error = "Category is required"
+//            return false
+//        }
 
         return true
     }
@@ -133,7 +133,7 @@ class AddModTaskDialogFragment : DialogFragment() {
         val title = titleEditText.text.toString().trim()
     //    val description = descriptionEditText.text.toString().trim()
         val points = pointsEditText.text.toString().toIntOrNull() ?: 0
-        val category = categoryDropdown.text.toString().trim()
+   //     val category = categoryDropdown.text.toString().trim()
 
         // Create a new Task object
         val task = Task(
@@ -141,7 +141,7 @@ class AddModTaskDialogFragment : DialogFragment() {
             title = title,
             description = "",//description,
             points = points,
-            categoryId = category, // Using category name as ID for now
+            categoryId = "",//category, // Using category name as ID for now
             createdBy = "current_user", // In a real app, this would come from authentication
             createdAt = Timestamp.now(),
             lastModifiedAt = Timestamp.now()
@@ -164,7 +164,7 @@ class AddModTaskDialogFragment : DialogFragment() {
         val title = titleEditText.text.toString().trim()
    //     val description = descriptionEditText.text.toString().trim()
         val points = pointsEditText.text.toString().toIntOrNull() ?: 0
-        val category = categoryDropdown.text.toString().trim()
+   //     val category = categoryDropdown.text.toString().trim()
 
         // Make sure we have an existing task to update
         if (existingTask == null) {
@@ -177,7 +177,7 @@ class AddModTaskDialogFragment : DialogFragment() {
             title = title,
             description = "",//description,
             points = points,
-            categoryId = category,
+            categoryId = "",//category,
             lastModifiedAt = Timestamp.now()
             // All other fields (id, createdBy, createdAt, completion history, etc.) are preserved
         )

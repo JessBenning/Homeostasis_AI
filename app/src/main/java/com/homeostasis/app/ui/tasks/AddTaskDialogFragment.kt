@@ -49,15 +49,15 @@ class AddTaskDialogFragment : DialogFragment() {
         titleEditText = view.findViewById(R.id.task_title_edit_text)
        // descriptionEditText = view.findViewById(R.id.task_description_edit_text)
         pointsEditText = view.findViewById(R.id.task_points_edit_text)
-        categoryDropdown = view.findViewById(R.id.task_category_dropdown)
+       // categoryDropdown = view.findViewById(R.id.task_category_dropdown)
         saveButton = view.findViewById(R.id.save_button)
         cancelButton = view.findViewById(R.id.cancel_button)
 
         //TODO
         // Set up category dropdown
-        val categories = listOf("Household", "Work", "Personal", "Other") // Placeholder categories
-        val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_dropdown_item_1line, categories)
-        categoryDropdown.setAdapter(adapter)
+//        val categories = listOf("Household", "Work", "Personal", "Other") // Placeholder categories
+//        val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_dropdown_item_1line, categories)
+//        categoryDropdown.setAdapter(adapter)
 
         // Set up click listeners
         saveButton.setOnClickListener {
