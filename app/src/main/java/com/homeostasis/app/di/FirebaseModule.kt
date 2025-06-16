@@ -45,8 +45,11 @@ object FirebaseModule {
 
     @Provides
     @Singleton
-    fun provideTaskHistoryRepository(@ApplicationContext context: Context): TaskHistoryRepository {
-        return TaskHistoryRepository(context)
+    fun provideTaskHistoryRepository(
+        taskHistoryDao: TaskHistoryDao, // Provide TaskHistoryDao
+        householdGroupIdProvider: HouseholdGroupIdProvider // Provide HouseholdGroupIdProvider
+    ): TaskHistoryRepository {
+        return TaskHistoryRepository(taskHistoryDao, householdGroupIdProvider) // Pass the dependencies
     }
 
 

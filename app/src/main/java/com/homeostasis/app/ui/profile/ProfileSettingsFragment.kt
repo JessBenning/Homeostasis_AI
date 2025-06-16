@@ -20,6 +20,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext // Import ApplicationCo
 import java.io.File // Import File
 import javax.inject.Inject
 import com.bumptech.glide.signature.ObjectKey
+import com.google.android.material.snackbar.Snackbar
 
 @AndroidEntryPoint
 class ProfileSettingsFragment : Fragment() {
@@ -107,7 +108,10 @@ class ProfileSettingsFragment : Fragment() {
         binding.buttonSaveProfile.setOnClickListener {
             val name = binding.editTextName.text.toString()
             viewModel.saveProfile(name)
-            // TODO: Show a confirmation message or navigate back
+
+            Snackbar.make(requireView(), "Profile saved successfully!", Snackbar.LENGTH_SHORT).show()
+
+
         }
     }
 

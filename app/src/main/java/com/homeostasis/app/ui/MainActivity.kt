@@ -48,7 +48,6 @@ class MainActivity : AppCompatActivity() {
                 R.id.navigation_tasks,
                 R.id.navigation_task_history,
               //  R.id.navigation_shopping,
-                R.id.navigation_profile,
                 R.id.navigation_settings
             )
         )
@@ -62,10 +61,6 @@ class MainActivity : AppCompatActivity() {
                 }
                 R.id.navigation_task_history -> {
                     navController.navigate(R.id.navigation_task_history)
-                    true
-                }
-                R.id.navigation_profile -> {
-                    navController.navigate(R.id.navigation_profile)
                     true
                 }
                 R.id.navigation_settings -> {

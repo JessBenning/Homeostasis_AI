@@ -8,13 +8,18 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.flow.first // Import first
 import java.util.Date
 import com.homeostasis.app.data.AppDatabase
+import javax.inject.Inject
 
 /**
  * Repository for task history-related operations.
  */
-class TaskHistoryRepository(private val context: android.content.Context) : FirebaseRepository<TaskHistory>() {
+class TaskHistoryRepository @Inject constructor(
+    private val taskHistoryDao: com.homeostasis.app.data.TaskHistoryDao, // Inject TaskHistoryDao
+    private val householdGroupIdProvider: com.homeostasis.app.data.HouseholdGroupIdProvider // Inject HouseholdGroupIdProvider
+) : FirebaseRepository<TaskHistory>() {
     
     override val collectionName: String = TaskHistory.COLLECTION
     
@@ -45,9 +50,8 @@ class TaskHistoryRepository(private val context: android.content.Context) : Fire
                 // needsSync = true // <<<< ADD THIS if you adopt a 'needsSync' flag model
             )
 
-
-            val localTaskHistoryDao = AppDatabase.getDatabase(this.context).taskHistoryDao() // Use class context
-            localTaskHistoryDao.insertOrUpdate(newHistory) // Still write locally first
+            // Use the injected DAO to write locally first
+            taskHistoryDao.insertOrUpdate(newHistory)
             Log.d(TAG_REPO_RECORD, "TaskHistory ${newHistory.id} inserted into local Room DB.")
 
             // Now attempt to write to Firestore as well
@@ -250,6 +254,20 @@ class TaskHistoryRepository(private val context: android.content.Context) : Fire
         } catch (e: Exception) {
             Log.e(TAG_REPO, "Error deleting TaskHistory $taskHistoryId from Firestore. Collection: $collectionName", e)
             false
+        }
+    }
+
+    /**
+     * Permanently deletes all task history entries for the current household group from the local database.
+     * The sync manager is expected to handle the corresponding remote deletion.
+     */
+    suspend fun deleteAllTaskHistory() {
+        val householdGroupId = householdGroupIdProvider.getHouseholdGroupId().first()
+        if (householdGroupId != null) {
+            taskHistoryDao.deleteAllTaskHistory(householdGroupId!!) // Use non-null assertion
+            Log.d("TaskHistoryRepo", "All task history deleted locally for household group: $householdGroupId")
+        } else {
+            Log.w("TaskHistoryRepo", "Cannot delete task history, householdGroupId is null.")
         }
     }
 

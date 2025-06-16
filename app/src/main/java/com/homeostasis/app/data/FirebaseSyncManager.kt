@@ -17,6 +17,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import android.content.Context // Keep if context is used for something else
 import com.homeostasis.app.data.remote.UserRepository
+import kotlinx.coroutines.tasks.await
 import java.io.File
 
 //import androidx.compose.ui.input.key.type
@@ -706,5 +707,46 @@ class FirebaseSyncManager @Inject constructor(
                 processRemoteUserChange(changeType, user, householdGroupIdProvider.getHouseholdGroupId().first()!!) // Pass householdGroupId
             }
         )
+    }
+
+    /**
+     * Syncs locally deleted task history by deleting corresponding documents from Firestore
+     * for the current household group. This is intended for use after a full local reset.
+     */
+    suspend fun syncDeletedTaskHistoryRemote() {
+        val specificTag = "$TAG_LOCAL_TO_REMOTE-TaskHistory-Reset"
+        Log.d(specificTag, "Starting remote sync for deleted task history.")
+        val householdGroupId = householdGroupIdProvider.getHouseholdGroupId().first()
+
+        if (householdGroupId == null) {
+            Log.w(specificTag, "Cannot sync deleted task history: Household Group ID is null.")
+            return
+        }
+
+        try {
+            // Query for all task history documents for this household group in Firestore
+            val querySnapshot = firestore.collection(TaskHistory.COLLECTION)
+                .whereEqualTo("householdGroupId", householdGroupId)
+                .get()
+                .await()
+
+            if (querySnapshot.isEmpty) {
+                Log.d(specificTag, "No remote task history found for household group $householdGroupId. Nothing to delete remotely.")
+                return
+            }
+
+            // Perform a batch deletion of the documents
+            val batch = firestore.batch()
+            querySnapshot.documents.forEach { document ->
+                batch.delete(document.reference)
+            }
+
+            batch.commit().await()
+            Log.i(specificTag, "Successfully deleted ${querySnapshot.size()} remote task history documents for household group $householdGroupId.")
+
+        } catch (e: Exception) {
+            Log.e(specificTag, "Error syncing deleted task history to remote.", e)
+            // TODO: Handle error - maybe retry or log for manual intervention
+        }
     }
 }

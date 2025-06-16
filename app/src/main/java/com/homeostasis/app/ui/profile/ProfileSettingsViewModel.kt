@@ -17,6 +17,8 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.channels.Channel // Import Channel
+import kotlinx.coroutines.flow.receiveAsFlow // Import receiveAsFlow
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -26,6 +28,8 @@ import javax.inject.Inject
 class ProfileSettingsViewModel @Inject constructor(
     private val userRepository: UserRepository,
     private val userDao: UserDao,
+    private val taskHistoryRepository: com.homeostasis.app.data.remote.TaskHistoryRepository, // Inject TaskHistoryRepository
+    private val firebaseSyncManager: com.homeostasis.app.data.FirebaseSyncManager, // Inject FirebaseSyncManager
     private val householdGroupIdProvider: HouseholdGroupIdProvider,
     private val imageUtils: ImageUtils,
     @ApplicationContext private val context: Context
@@ -33,6 +37,9 @@ class ProfileSettingsViewModel @Inject constructor(
 
     private val _userProfile = MutableLiveData<User?>()
     val userProfile: LiveData<User?> get() = _userProfile
+
+    private val _resetScoresEvent = Channel<Unit>(Channel.BUFFERED) // Channel for one-time events
+    val resetScoresEvent = _resetScoresEvent.receiveAsFlow() // Expose as Flow
 
     private val _selectedImagePreview = MutableLiveData<ByteArray?>()
     val selectedImagePreview: LiveData<ByteArray?> get() = _selectedImagePreview
@@ -68,7 +75,8 @@ class ProfileSettingsViewModel @Inject constructor(
             val bitmap = imageUtils.decodeUriToBitmap(context, imageUri)
             bitmap?.let {
                 val resizedBitmap = ImageUtils.resizeBitmap(it, 250)
-                val compressedBytes = ImageUtils.compressBitmapToByteArray(resizedBitmap, 1 * 1024 * 1024)
+                val compressedBytes =
+                    ImageUtils.compressBitmapToByteArray(resizedBitmap, 1 * 1024 * 1024)
                 selectedImageBytes = compressedBytes
                 _selectedImagePreview.postValue(compressedBytes)
             } ?: run {
@@ -93,7 +101,10 @@ class ProfileSettingsViewModel @Inject constructor(
                         FileOutputStream(file).use { fos ->
                             fos.write(bytes)
                         }
-                        Log.d("ProfileSettingsVM", "New profile image saved locally to: ${file.absolutePath}")
+                        Log.d(
+                            "ProfileSettingsVM",
+                            "New profile image saved locally to: ${file.absolutePath}"
+                        )
                         selectedImageBytes = null // Clear temporary bytes after successful save
                     } catch (e: IOException) {
                         e.printStackTrace()
@@ -121,7 +132,10 @@ class ProfileSettingsViewModel @Inject constructor(
                         needsSync = true
                     )
                     userDao.upsertUser(updatedUser)
-                    Log.d("ProfileSettingsVM", "Existing user ${updatedUser.id} updated in local DB. New lastModifiedAt: ${currentTime.toDate()}")
+                    Log.d(
+                        "ProfileSettingsVM",
+                        "Existing user ${updatedUser.id} updated in local DB. New lastModifiedAt: ${currentTime.toDate()}"
+                    )
                     _userProfile.postValue(updatedUser) // Optionally update LiveData for the current screen
                 } else {
                     // Create new user
@@ -136,13 +150,37 @@ class ProfileSettingsViewModel @Inject constructor(
                         // Ensure other User fields have appropriate defaults or are set here
                     )
                     userDao.upsertUser(newUser)
-                    Log.d("ProfileSettingsVM", "New user ${newUser.id} created in local DB. lastModifiedAt: ${currentTime.toDate()}")
+                    Log.d(
+                        "ProfileSettingsVM",
+                        "New user ${newUser.id} created in local DB. lastModifiedAt: ${currentTime.toDate()}"
+                    )
                     _userProfile.postValue(newUser) // Optionally update LiveData
                 }
             } else {
-                Log.w("ProfileSettingsVM", "Cannot save profile, userId or householdGroupId is null.")
+                Log.w(
+                    "ProfileSettingsVM",
+                    "Cannot save profile, userId or householdGroupId is null."
+                )
                 // TODO: Handle case where userId or householdGroupId is null
             }
         }
     }
-}
+        fun resetScoresAndHistory() {
+            viewModelScope.launch {
+                try {
+                    // Delete locally first
+                    taskHistoryRepository.deleteAllTaskHistory()
+                    Log.d("ProfileSettingsVM", "Local task history deleted.")
+
+                    // Then trigger remote sync for deleted history
+                    firebaseSyncManager.syncDeletedTaskHistoryRemote()
+                    Log.d("ProfileSettingsVM", "Remote sync for deleted task history triggered.")
+
+                    _resetScoresEvent.send(Unit) // Signal success to Fragment
+                } catch (e: Exception) {
+                    Log.e("ProfileSettingsVM", "Error resetting scores and history", e)
+                    // TODO: Handle error (e.g., show an error message to the user)
+                }
+            }
+        }
+    }
