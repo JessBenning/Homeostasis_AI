@@ -12,6 +12,7 @@ import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.navigation.fragment.findNavController
+import com.google.android.material.textfield.TextInputLayout
 import com.homeostasis.app.R
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -30,7 +31,10 @@ class AuthFragment : Fragment() {
     private lateinit var nameEditText: EditText
     private lateinit var loginButton: Button
     private lateinit var registerButton: Button
-    private lateinit var toggleModeTextView: TextView
+    private lateinit var toggleModeTextViewRegister: TextView
+    private lateinit var toggleModeTextViewLogin: TextView
+    private lateinit var passwordLayout: TextInputLayout
+    private lateinit var confirmPasswordLayout: TextInputLayout // If you have a confirm password field with a toggle
     
     // State
     private var isLoginMode = true
@@ -56,8 +60,15 @@ class AuthFragment : Fragment() {
         nameEditText = view.findViewById(R.id.name_edit_text)
         loginButton = view.findViewById(R.id.login_button)
         registerButton = view.findViewById(R.id.register_button)
-        toggleModeTextView = view.findViewById(R.id.toggle_mode_text_view)
-        
+        toggleModeTextViewRegister = view.findViewById(R.id.toggle_mode_text_view_register)
+        toggleModeTextViewLogin = view.findViewById(R.id.toggle_mode_text_view_login)
+        passwordLayout = view.findViewById(R.id.password_layout)
+        confirmPasswordLayout = view.findViewById(R.id.confirm_password_layout)
+
+
+
+
+
         // Set initial UI state
         updateUIForMode()
         
@@ -74,7 +85,12 @@ class AuthFragment : Fragment() {
             }
         }
         
-        toggleModeTextView.setOnClickListener {
+        toggleModeTextViewRegister.setOnClickListener {
+            isLoginMode = !isLoginMode
+            updateUIForMode()
+        }
+
+        toggleModeTextViewLogin.setOnClickListener {
             isLoginMode = !isLoginMode
             updateUIForMode()
         }
@@ -112,14 +128,26 @@ class AuthFragment : Fragment() {
             registerButton.visibility = View.GONE
             confirmPasswordEditText.visibility = View.GONE
             nameEditText.visibility = View.GONE
-            toggleModeTextView.text = getString(R.string.auth_dont_have_account)
+            toggleModeTextViewRegister.visibility= View.VISIBLE
+            toggleModeTextViewLogin.visibility = View.GONE
+            passwordLayout.endIconMode = TextInputLayout.END_ICON_PASSWORD_TOGGLE
+
+            // If confirm password field is not used in login, ensure its toggle is off or layout hidden
+            confirmPasswordLayout.endIconMode = TextInputLayout.END_ICON_NONE // Or just rely on visibility GONE
+
         } else {
             // Registration mode
             loginButton.visibility = View.GONE
             registerButton.visibility = View.VISIBLE
             confirmPasswordEditText.visibility = View.VISIBLE
             nameEditText.visibility = View.VISIBLE
-            toggleModeTextView.text = getString(R.string.auth_already_have_account)
+            toggleModeTextViewLogin.visibility = View.VISIBLE
+            toggleModeTextViewRegister.visibility= View.GONE
+
+
+            // Enable password toggle for both password fields in registration mode
+            passwordLayout.endIconMode = TextInputLayout.END_ICON_PASSWORD_TOGGLE
+            confirmPasswordLayout.endIconMode = TextInputLayout.END_ICON_PASSWORD_TOGGLE
         }
     }
     

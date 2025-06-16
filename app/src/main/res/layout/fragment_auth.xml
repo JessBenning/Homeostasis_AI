@@ -13,6 +13,18 @@
         android:padding="@dimen/spacing_large">
 
         <TextView
+            android:id="@+id/toggle_mode_text_view_login"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/spacing_medium"
+            android:text="@string/auth_already_have_account"
+            android:textAppearance="?attr/textAppearanceBody2"
+            android:textColor="@color/primary"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/register_button" />
+
+        <TextView
             android:id="@+id/app_title"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -85,7 +97,7 @@
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toBottomOf="@id/password_layout"
-            app:passwordToggleEnabled="true">
+            app:passwordToggleEnabled="false">
 
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/confirm_password_edit_text"
@@ -144,7 +156,7 @@
             app:layout_constraintTop_toBottomOf="@id/forgot_password_text_view" />
 
         <TextView
-            android:id="@+id/toggle_mode_text_view"
+            android:id="@+id/toggle_mode_text_view_register"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/spacing_medium"
