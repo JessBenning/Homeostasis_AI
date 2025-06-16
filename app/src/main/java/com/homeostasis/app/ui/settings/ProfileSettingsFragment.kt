@@ -1,8 +1,6 @@
-package com.homeostasis.app.ui.profile
+package com.homeostasis.app.ui.settings
 
-import android.app.Activity
-import android.content.Context // Import Context
-import android.content.Intent
+import android.content.Context
 import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -11,16 +9,18 @@ import android.view.ViewGroup
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
+import androidx.lifecycle.lifecycleScope
 import com.bumptech.glide.Glide
-import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.bumptech.glide.request.RequestOptions
-import com.homeostasis.app.databinding.FragmentProfileSettingsBinding
-import dagger.hilt.android.AndroidEntryPoint
-import dagger.hilt.android.qualifiers.ApplicationContext // Import ApplicationContext
-import java.io.File // Import File
-import javax.inject.Inject
 import com.bumptech.glide.signature.ObjectKey
 import com.google.android.material.snackbar.Snackbar
+import com.homeostasis.app.R
+import com.homeostasis.app.databinding.FragmentProfileSettingsBinding
+import dagger.hilt.android.AndroidEntryPoint
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.launch
+import java.io.File
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class ProfileSettingsFragment : Fragment() {
@@ -58,7 +58,10 @@ class ProfileSettingsFragment : Fragment() {
                 binding.editTextName.setText(currentUser.name)
 
                 // Derive the local profile picture file path
-                val localFilePath = File(appContext.filesDir, "profile_picture_${currentUser.id}.jpg").absolutePath
+                val localFilePath = File(
+                    appContext.filesDir,
+                    "profile_picture_${currentUser.id}.jpg"
+                ).absolutePath
                 val localFile = File(localFilePath)
                 val imageSignature = localFile.lastModified().toString()
 
@@ -68,7 +71,7 @@ class ProfileSettingsFragment : Fragment() {
                         .load(localFile)
                         .signature(ObjectKey(imageSignature))
                         .apply(RequestOptions.circleCropTransform())
-                        .placeholder(com.homeostasis.app.R.drawable.ic_default_profile) // Use a default image
+                        .placeholder(R.drawable.ic_default_profile) // Use a default image
                         .into(binding.imageViewProfilePicture)
 
                 } else if (currentUser.profileImageUrl.isNotEmpty()) {
@@ -76,12 +79,15 @@ class ProfileSettingsFragment : Fragment() {
                     Glide.with(this)
                         .load(currentUser.profileImageUrl)
                         .apply(RequestOptions.circleCropTransform())
-                        .placeholder(com.homeostasis.app.R.drawable.ic_default_profile) // Use a default image
+                        .placeholder(R.drawable.ic_default_profile) // Use a default image
                         .into(binding.imageViewProfilePicture)
                 } else {
                     // Load default image if no local file and no remote URL
-                    binding.imageViewProfilePicture.setImageResource(com.homeostasis.app.R.drawable.ic_default_profile)
+                    binding.imageViewProfilePicture.setImageResource(R.drawable.ic_default_profile)
                 }
+            }
+            lifecycleScope.launch {
+                activity?.title = getString(R.string.profile_title)
             }
         }
 
@@ -95,7 +101,7 @@ class ProfileSettingsFragment : Fragment() {
                     .into(binding.imageViewProfilePicture)
             } else {
                 // Load default image if selected image is null (e.g., processing failed)
-                binding.imageViewProfilePicture.setImageResource(com.homeostasis.app.R.drawable.ic_default_profile)
+                binding.imageViewProfilePicture.setImageResource(R.drawable.ic_default_profile)
             }
         }
 

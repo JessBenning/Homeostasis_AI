@@ -1,24 +1,25 @@
-package com.homeostasis.app.ui.profile
+package com.homeostasis.app.ui.settings
 
-import androidx.lifecycle.ViewModel
 import android.content.Context
+import android.net.Uri
 import android.util.Log
-import androidx.lifecycle.viewModelScope
-import com.homeostasis.app.data.UserDao
-import com.homeostasis.app.data.HouseholdGroupIdProvider
-import com.homeostasis.app.data.remote.UserRepository
-import com.homeostasis.app.utils.ImageUtils
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
-// viewModelScope is already imported
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.google.firebase.Timestamp
+import com.homeostasis.app.data.FirebaseSyncManager
+import com.homeostasis.app.data.UserDao
 import com.homeostasis.app.data.model.User
-import com.google.firebase.Timestamp // <<< ADD THIS IMPORT
+import com.homeostasis.app.data.remote.TaskHistoryRepository
+import com.homeostasis.app.data.remote.UserRepository
+import com.homeostasis.app.utils.ImageUtils
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.channels.Channel // Import Channel
-import kotlinx.coroutines.flow.receiveAsFlow // Import receiveAsFlow
+import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -28,9 +29,8 @@ import javax.inject.Inject
 class ProfileSettingsViewModel @Inject constructor(
     private val userRepository: UserRepository,
     private val userDao: UserDao,
-    private val taskHistoryRepository: com.homeostasis.app.data.remote.TaskHistoryRepository, // Inject TaskHistoryRepository
-    private val firebaseSyncManager: com.homeostasis.app.data.FirebaseSyncManager, // Inject FirebaseSyncManager
-    private val householdGroupIdProvider: HouseholdGroupIdProvider,
+    private val taskHistoryRepository: TaskHistoryRepository, // Inject TaskHistoryRepository
+    private val firebaseSyncManager: FirebaseSyncManager, // Inject FirebaseSyncManager
     private val imageUtils: ImageUtils,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
@@ -38,7 +38,8 @@ class ProfileSettingsViewModel @Inject constructor(
     private val _userProfile = MutableLiveData<User?>()
     val userProfile: LiveData<User?> get() = _userProfile
 
-    private val _resetScoresEvent = Channel<Unit>(Channel.BUFFERED) // Channel for one-time events
+    private val _resetScoresEvent =
+        Channel<Unit>(Channel.Factory.BUFFERED) // Channel for one-time events
     val resetScoresEvent = _resetScoresEvent.receiveAsFlow() // Expose as Flow
 
     private val _selectedImagePreview = MutableLiveData<ByteArray?>()
@@ -56,7 +57,7 @@ class ProfileSettingsViewModel @Inject constructor(
             // then optionally refresh from remote if needed or let sync manager handle updates.
             userRepository.getCurrentUserId()?.let { userId ->
                 // Example: Fetch from local first
-                val localUser = householdGroupIdProvider.getHouseholdGroupId().first()?.let { hid ->
+                val localUser = userDao.getUserByIdWithoutHouseholdIdFlow(userId).first()?.householdGroupId?.takeIf { it.isNotEmpty() }?.let { hid ->
                     userDao.getUserById(userId, hid)
                 }
                 if (localUser != null) {
@@ -70,7 +71,7 @@ class ProfileSettingsViewModel @Inject constructor(
         }
     }
 
-    fun handleImageSelection(context: android.content.Context, imageUri: android.net.Uri) {
+    fun handleImageSelection(context: Context, imageUri: Uri) {
         viewModelScope.launch {
             val bitmap = imageUtils.decodeUriToBitmap(context, imageUri)
             bitmap?.let {
@@ -88,11 +89,18 @@ class ProfileSettingsViewModel @Inject constructor(
     fun saveProfile(name: String) {
         viewModelScope.launch {
             val userId = userRepository.getCurrentUserId()
-            val householdGroupId = householdGroupIdProvider.getHouseholdGroupId().first()
+            if (userId == null) {
+                Log.w("ProfileSettingsVM", "Cannot save profile, userId is null.")
+                // TODO: Handle case where userId is null (e.g., show a message to the user)
+                return@launch // Exit the coroutine if userId is null
+            }
+            val householdGroupId = userDao.getUserByIdWithoutHouseholdIdFlow(userId).first()?.householdGroupId?.takeIf { it.isNotEmpty() }
+
+
 
             if (userId != null && householdGroupId != null) {
                 val existingUser = userDao.getUserById(userId, householdGroupId)
-                val currentTime = Timestamp.now() // Get current time once
+                val currentTime = Timestamp.Companion.now() // Get current time once
 
                 var localImageSaveSuccess = true // Assume success unless it fails
                 selectedImageBytes?.let { bytes ->
@@ -165,22 +173,4 @@ class ProfileSettingsViewModel @Inject constructor(
             }
         }
     }
-        fun resetScoresAndHistory() {
-            viewModelScope.launch {
-                try {
-                    // Delete locally first
-                    taskHistoryRepository.deleteAllTaskHistory()
-                    Log.d("ProfileSettingsVM", "Local task history deleted.")
-
-                    // Then trigger remote sync for deleted history
-                    firebaseSyncManager.syncDeletedTaskHistoryRemote()
-                    Log.d("ProfileSettingsVM", "Remote sync for deleted task history triggered.")
-
-                    _resetScoresEvent.send(Unit) // Signal success to Fragment
-                } catch (e: Exception) {
-                    Log.e("ProfileSettingsVM", "Error resetting scores and history", e)
-                    // TODO: Handle error (e.g., show an error message to the user)
-                }
-            }
-        }
     }

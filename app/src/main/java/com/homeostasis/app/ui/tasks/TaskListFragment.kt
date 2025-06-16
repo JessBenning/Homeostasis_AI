@@ -11,7 +11,11 @@ import android.widget.Toast
 //import androidx.compose.ui.semantics.getOrNull
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.lifecycleScope
+import androidx.navigation.NavController
+import androidx.navigation.findNavController
 // import androidx.lifecycle.observe // Not needed for Flow collection
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -22,6 +26,7 @@ import com.google.android.material.snackbar.Snackbar
 import com.google.firebase.Timestamp
 import com.homeostasis.app.R
 import com.homeostasis.app.data.model.Task
+import com.homeostasis.app.data.model.Group // Import Group
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -29,6 +34,7 @@ import java.util.Calendar
 import java.util.Date
 import javax.inject.Inject
 
+import androidx.navigation.fragment.findNavController
 /**
  * Fragment for displaying the list of tasks.
  * Manages UI interactions and observes DisplayTask objects from the ViewModel.
@@ -46,6 +52,10 @@ class TaskListFragment : Fragment(), AddModTaskDialogFragment.AddModTaskListener
     private lateinit var itemTouchHelper: ItemTouchHelper
     private lateinit var swipeCallback: TaskSwipeCallback
 
+    private lateinit var navController: NavController
+    private lateinit var destinationChangedListener: NavController.OnDestinationChangedListener
+
+
     private val TAG = "TaskListFragment"
 
     override fun onCreateView(
@@ -55,6 +65,7 @@ class TaskListFragment : Fragment(), AddModTaskDialogFragment.AddModTaskListener
     ): View? {
         return inflater.inflate(R.layout.fragment_task_list, container, false)
     }
+
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
@@ -69,7 +80,33 @@ class TaskListFragment : Fragment(), AddModTaskDialogFragment.AddModTaskListener
         addTaskButton.setOnClickListener {
             showAddTaskDialog()
         }
+
+        // Update the fragment title with the group name
+        lifecycleScope.launch {
+            val householdGroupId = viewModel.getCurrentHouseholdGroupId()
+            val title = if (householdGroupId != null && householdGroupId.isNotEmpty()) {
+                val group = viewModel.getGroupById(householdGroupId)
+                "${group?.name ?: getString(R.string.title_default_group)} Tasks"
+            } else {
+                getString(R.string.title_tasks) // Default title if not in a group
+            }
+            activity?.title = title
+        }
+
+
     }
+
+    // Important: Remove the listener when the view is destroyed to prevent memory leaks
+    // and to avoid issues if the fragment is re-created.
+    override fun onDestroyView() {
+        super.onDestroyView()
+        // Remove the listener when the view is destroyed
+        if (::navController.isInitialized && ::destinationChangedListener.isInitialized) { // Check if initialized
+            navController.removeOnDestinationChangedListener(destinationChangedListener)
+            Log.d(TAG, "OnDestinationChangedListener removed in Fragment's onDestroyView.")
+        }
+    }
+
 
     // This interface method from TaskAdapter.OnTaskClickListener is now more complex due to session counts
     override fun onTaskMarkedComplete(task: Task, isNewSessionCompletion: Boolean) {

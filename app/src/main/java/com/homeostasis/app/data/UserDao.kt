@@ -29,11 +29,30 @@ interface UserDao {
      * @param householdGroupId The ID of the household group.
      * @return A Flow emitting a list of users needing sync.
      */
-    @Query("SELECT * FROM User WHERE needsSync = 1 AND householdGroupId = :householdGroupId")
-    fun getUsersRequiringSync(householdGroupId: String): Flow<List<User>>
-
+    @Query("SELECT * FROM User WHERE needsSync = 1")
+    fun getUsersRequiringSync(): Flow<List<User>>
     @Query("SELECT * FROM User WHERE householdGroupId = :householdGroupId")
     fun getAllUsersFlow(householdGroupId: String): Flow<List<User>>
+
+    /**
+     * Gets a list of users belonging to a specific household group.
+     * Intended for snapshot queries, not for observing changes.
+     *
+     * @param householdGroupId The ID of the household group.
+     * @return A list of users in the specified group.
+     */
+    @Query("SELECT * FROM User WHERE householdGroupId = :householdGroupId")
+    suspend fun getUsersByHouseholdGroupIdSnapshot(householdGroupId: String): List<User>
+
+    /**
+     * Gets a flow of a single user by their ID, without filtering by household group ID.
+     * This is intended for scenarios where the household group ID is not yet known or is changing.
+     *
+     * @param userId The ID of the user.
+     * @return A Flow emitting the User object or null if not found.
+     */
+    @Query("SELECT * FROM User WHERE id = :userId")
+    fun getUserByIdWithoutHouseholdIdFlow(userId: String): Flow<User?>
 
     // The updateUserProfileLocal default method has been removed.
     // This logic will be handled by UserRepository.

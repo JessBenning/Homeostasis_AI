@@ -1,4 +1,4 @@
-mermaid
+```mermaid
 graph TD
 %% General style for black text if not overridden
 classDef default color:#000,fill:#fff,stroke:#333;

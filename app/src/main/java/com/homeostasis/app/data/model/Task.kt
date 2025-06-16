@@ -25,8 +25,8 @@ data class Task(
     @get:PropertyName("categoryId") @set:PropertyName("categoryId") // Explicit for clarity with var
     var categoryId: String = "",
 
-    @get:PropertyName("createdBy") @set:PropertyName("createdBy")
-    var createdBy: String = "",
+    @get:PropertyName("ownerId") @set:PropertyName("ownerId") // Add ownerId field
+    var ownerId: String = "",
 
     @get:PropertyName("isDeleted") @set:PropertyName("isDeleted")
     var isDeleted: Boolean = false, // CHANGED TO VAR
@@ -62,7 +62,7 @@ data class Task(
         description = "", //can be removed
         points = 0,
         categoryId = "",
-        createdBy = "",
+        ownerId = "", // Add ownerId to secondary constructor
         isDeleted = false,
         createdAt = Timestamp.now(), // Default for new local object
         lastModifiedAt = Timestamp.now(), // Default for new local object

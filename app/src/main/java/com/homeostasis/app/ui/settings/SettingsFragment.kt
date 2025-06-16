@@ -1,5 +1,6 @@
 package com.homeostasis.app.ui.settings
 
+
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -9,23 +10,25 @@ import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.homeostasis.app.databinding.FragmentSettingsBinding
 import dagger.hilt.android.AndroidEntryPoint
-import com.homeostasis.app.ui.settings.InviteDialogFragment
 import com.homeostasis.app.R
-import androidx.fragment.app.viewModels // Import viewModels
-import com.homeostasis.app.ui.profile.ProfileSettingsViewModel // Import ProfileSettingsViewModel
-import android.app.AlertDialog // Import AlertDialog
-import com.google.android.material.snackbar.Snackbar // Import Snackbar
-import androidx.lifecycle.lifecycleScope // Import lifecycleScope
-import kotlinx.coroutines.launch // Import launch for coroutine
-import kotlinx.coroutines.flow.collect // Import collect for Flow
+import androidx.fragment.app.viewModels
+import android.app.AlertDialog
+import com.google.android.material.snackbar.Snackbar
+import com.homeostasis.app.ui.task_history.TaskHistoryViewModel // Import TaskHistoryViewModel
+import androidx.lifecycle.lifecycleScope
+import com.homeostasis.app.ui.groups.CreateGroupDialogFragment
+import kotlinx.coroutines.launch
+
 
 @AndroidEntryPoint
 class SettingsFragment : Fragment() {
 
     private val profileSettingsViewModel: ProfileSettingsViewModel by viewModels() // Inject ProfileSettingsViewModel
+    private val taskHistoryViewModel: TaskHistoryViewModel by viewModels() // Inject TaskHistoryViewModel
 
     private var _binding: FragmentSettingsBinding? = null
     private val binding get() = _binding!!
+
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -47,13 +50,30 @@ class SettingsFragment : Fragment() {
         settingsRecyclerView.layoutManager = LinearLayoutManager(requireContext())
 
         
-                val settingsOptions = listOf("Profile","Invite Members", "Reset Scores and History") // Add Reset option
+                val settingsOptions = listOf(
+                    SettingsListItem.Setting("Profile"),
+                    SettingsListItem.Setting("Reset Scores and History"), // Keep Reset Scores option
+                    SettingsListItem.Header("Group Settings"), // Group Settings Header
+                    SettingsListItem.Setting("Create New Group"),
+                    SettingsListItem.Setting("Invite Members"),
+                    SettingsListItem.Setting("Accept Invite"), // Add Accept Invite option
+ //                   SettingsListItem.Setting("Group Admin"),
+//                    SettingsListItem.Setting("View Group Members"),
+//                    SettingsListItem.Setting("Remove Member"), //not enabled for non owner
+//                    SettingsListItem.Setting("Rename Group"), //not enabled for non owner
+//                    SettingsListItem.Setting("Delete Group"), //not enabled for non owner
+//                    SettingsListItem.Setting("Leave Group"), //not enabled for owner
+
+                )
         
                 val settingsAdapter = SettingsAdapter(settingsOptions) { settingName ->
                     when (settingName) {
                         "Profile" -> {
 
                             findNavController().navigate(R.id.navigation_profile)
+                        }
+                        "Create New Group" -> {
+                            CreateGroupDialogFragment().show(childFragmentManager, CreateGroupDialogFragment.TAG)
                         }
                         "Invite Members" -> {
                             // Assuming R.id.navigation_household_group is the correct destination for inviting members
@@ -65,7 +85,7 @@ class SettingsFragment : Fragment() {
                                 .setTitle("Reset Scores and History")
                                 .setMessage("Are you sure you want to permanently delete all task history and reset scores? This action cannot be undone.")
                                 .setPositiveButton("Reset") { dialog, _ ->
-                                    profileSettingsViewModel.resetScoresAndHistory() // Call ViewModel function
+                                    taskHistoryViewModel.resetScoresAndHistory() // Call ViewModel function on TaskHistoryViewModel
                                     dialog.dismiss()
                                 }
                                 .setNegativeButton("Cancel") { dialog, _ ->
@@ -74,14 +94,22 @@ class SettingsFragment : Fragment() {
                                 .setIcon(android.R.drawable.ic_dialog_alert)
                                 .show()
                         }
+                        "Accept Invite" -> {
+                            AcceptInviteDialogFragment().show(childFragmentManager, AcceptInviteDialogFragment.TAG)
+                        }
                     }
                 }
+
+                lifecycleScope.launch {
+                    activity?.title = getString(R.string.settings_title)
+                }
+
                 settingsAdapter.fragmentManager = childFragmentManager
                 settingsRecyclerView.adapter = settingsAdapter
 
-                // Observe reset scores event from ProfileSettingsViewModel
+                // Observe reset scores event from TaskHistoryViewModel
                 viewLifecycleOwner.lifecycleScope.launch {
-                    profileSettingsViewModel.resetScoresEvent.collect {
+                    taskHistoryViewModel.resetScoresEvent.collect {
                         Snackbar.make(binding.root, "Task history and scores reset.", Snackbar.LENGTH_SHORT).show()
                     }
                 }

@@ -7,10 +7,10 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.homeostasis.app.data.AppDatabase
 import com.homeostasis.app.data.AppDatabase.Companion.MIGRATION_11_12
 
-import com.homeostasis.app.data.HouseholdGroupIdProvider
 import com.homeostasis.app.data.TaskDao
 import com.homeostasis.app.data.TaskHistoryDao
 import com.homeostasis.app.data.UserDao
+import com.homeostasis.app.data.GroupDao
 import com.homeostasis.app.data.remote.*
 import dagger.Module
 import dagger.Provides
@@ -30,13 +30,13 @@ object FirebaseModule {
     @Singleton
     fun provideUserRepository(
         firebaseStorageRepository: FirebaseStorageRepository, // Inject FirebaseStorageRepository
-        userDao: UserDao, // Inject UserDao
-        householdGroupIdProvider: HouseholdGroupIdProvider // Inject HouseholdGroupIdProvider
+        userDao: UserDao // Inject UserDao
+        // Removed HouseholdGroupIdProvider injection
     ): UserRepository {
-        return UserRepository(firebaseStorageRepository, userDao, householdGroupIdProvider) // Pass the injected repositories and provider
+        return UserRepository(firebaseStorageRepository, userDao) // Removed HouseholdGroupIdProvider from constructor
     }
 
-    
+
     @Provides
     @Singleton
     fun provideTaskRepository(): TaskRepository {
@@ -46,10 +46,26 @@ object FirebaseModule {
     @Provides
     @Singleton
     fun provideTaskHistoryRepository(
-        taskHistoryDao: TaskHistoryDao, // Provide TaskHistoryDao
-        householdGroupIdProvider: HouseholdGroupIdProvider // Provide HouseholdGroupIdProvider
+        taskHistoryDao: TaskHistoryDao // Provide TaskHistoryDao
+        // Removed HouseholdGroupIdProvider injection
     ): TaskHistoryRepository {
-        return TaskHistoryRepository(taskHistoryDao, householdGroupIdProvider) // Pass the dependencies
+        return TaskHistoryRepository(taskHistoryDao) // Removed HouseholdGroupIdProvider from constructor
+    }
+
+    @Provides
+    @Singleton
+    fun provideGroupDao(appDatabase: AppDatabase): GroupDao {
+        return appDatabase.groupDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideGroupRepository(
+        firestore: FirebaseFirestore,
+        groupDao: GroupDao
+        // Removed HouseholdGroupIdProvider injection
+    ): GroupRepository {
+        return GroupRepository(groupDao) // Removed HouseholdGroupIdProvider from constructor
     }
 
 
@@ -69,7 +85,8 @@ object FirebaseModule {
                 AppDatabase.MIGRATION_9_10,
                 AppDatabase.MIGRATION_10_11,
                 AppDatabase.MIGRATION_11_12,
-                AppDatabase.MIGRATION_12_13
+                AppDatabase.MIGRATION_12_13,
+                AppDatabase.MIGRATION_13_14
             )
             .build()
     }
@@ -111,12 +128,7 @@ object FirebaseModule {
         return UserSettingsRepository()
     }
     
-    @Provides
-    @Singleton
-    fun provideResetHistoryRepository(): ResetHistoryRepository {
-        return ResetHistoryRepository()
-    }
-    
+
     @Provides
     @Singleton
     fun provideFirebaseStorageRepository(): FirebaseStorageRepository {

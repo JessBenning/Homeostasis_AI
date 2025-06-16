@@ -145,7 +145,7 @@ class TaskRepository(/* private val taskDao: TaskDao */) : FirebaseRepository<Ta
                 "description" to task.description, // Keep even if null to clear field
                 "points" to task.points,
                 "categoryId" to task.categoryId,
-                "createdBy" to task.createdBy,
+                "ownerId" to task.ownerId, // Use ownerId instead of createdBy
                 "createdAt" to task.createdAt, // Preserve original creation time
                 "lastModifiedAt" to FieldValue.serverTimestamp(), // Use server timestamp for modification
                 "isCompleted" to task.isCompleted, // Persist completion status
@@ -251,7 +251,7 @@ class TaskRepository(/* private val taskDao: TaskDao */) : FirebaseRepository<Ta
     suspend fun getTasksByUser(userId: String): List<Task> { // UNCHANGED
         return try {
             collection
-                .whereEqualTo("createdBy", userId)
+                .whereEqualTo("ownerId", userId) // Query by ownerId
                 .whereEqualTo("isDeleted", false)
                 .get()
                 .await()

@@ -12,6 +12,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
+import com.homeostasis.app.R
 import com.homeostasis.app.databinding.FragmentTaskHistoryBinding
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
@@ -32,6 +33,8 @@ class TaskHistoryFragment : Fragment() {
     ): View {
         _binding = FragmentTaskHistoryBinding.inflate(inflater, container, false)
         return binding.root
+
+
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -39,6 +42,18 @@ class TaskHistoryFragment : Fragment() {
 
         setupRecyclerView()
         observeViewModel()
+
+        // Update the fragment title with the group name
+        lifecycleScope.launch {
+            val householdGroupId = viewModel.getCurrentHouseholdGroupId()
+            val title = if (householdGroupId != null && householdGroupId.isNotEmpty()) {
+                val group = viewModel.getGroupById(householdGroupId)
+                "${group?.name ?: getString(R.string.title_default_group)} Scores & History"
+            } else {
+                getString(R.string.task_history_title) // Default title if not in a group
+            }
+            activity?.title = title
+        }
     }
 
     private fun setupRecyclerView() {

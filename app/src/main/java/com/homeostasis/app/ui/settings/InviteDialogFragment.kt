@@ -4,35 +4,25 @@ import android.app.Dialog
 import android.os.Bundle
 import androidx.fragment.app.DialogFragment
 import com.homeostasis.app.R
-import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import androidx.appcompat.app.AlertDialog
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import android.widget.Toast
 import androidx.fragment.app.viewModels
-import com.google.firebase.auth.FirebaseAuth
-import com.homeostasis.app.data.model.User
-import com.homeostasis.app.data.UserDao
 import android.content.Intent
 import android.widget.TextView
 import android.widget.Button
 import android.net.Uri
 import android.util.Log
-import com.homeostasis.app.viewmodel.HouseholdGroupViewModel
 import dagger.hilt.android.AndroidEntryPoint
-import javax.inject.Inject
+import kotlinx.coroutines.flow.collectLatest
 
 
-
+@AndroidEntryPoint
 class InviteDialogFragment : DialogFragment() {
-    private val viewModel: HouseholdGroupViewModel by viewModels()
 
-    @Inject
-    lateinit var auth: FirebaseAuth
-
-    @Inject
-    lateinit var userDao: UserDao
+    // Inject the ViewModel
+    private val inviteViewModel: InviteViewModel by viewModels()
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val builder = MaterialAlertDialogBuilder(requireContext())
@@ -43,18 +33,40 @@ class InviteDialogFragment : DialogFragment() {
         val inviteLinkTextView = view.findViewById<TextView>(R.id.invite_link_text_view)
         val shareButton = view.findViewById<Button>(R.id.share_button)
 
-        // Generate deep link
-        val householdGroupId = "testHouseholdGroupId" // TODO: Get householdGroupId
-        val encodedGroupId = Uri.encode(householdGroupId)
-        val deepLink = "homeostasis://invite?groupId=$encodedGroupId"
-        Log.d("InviteDialogFragment", "Deep Link: " + deepLink)
-        inviteLinkTextView.text = deepLink
+        // Disable share button initially
+        shareButton.isEnabled = false
+        inviteLinkTextView.text = "Loading invite link..." // Initial text
+
+        // Observe the household group ID from the ViewModel
+        lifecycleScope.launch {
+            inviteViewModel.householdGroupId.collectLatest { householdGroupId ->
+                Log.d("InviteDialogFragment", "Observed householdGroupId: $householdGroupId")
+                if (householdGroupId != null && householdGroupId.isNotEmpty() && householdGroupId != com.homeostasis.app.data.Constants.DEFAULT_GROUP_ID) {
+                    // Generate deep link with the actual group ID
+                    val encodedGroupId = Uri.encode(householdGroupId)
+                    val deepLink = "homeostasis://invite?groupId=$encodedGroupId"
+                    Log.d("InviteDialogFragment", "Generated Deep Link: " + deepLink)
+                    inviteLinkTextView.text = deepLink
+                    shareButton.isEnabled = true // Enable share button
+                } else {
+                    // Handle cases where group ID is not available or is the default
+                    inviteLinkTextView.text = "Cannot generate invite link. Please join or create a group."
+                    shareButton.isEnabled = false // Keep share button disabled
+                    Log.w("InviteDialogFragment", "Household Group ID is null, empty, or default. Cannot generate invite link.")
+                }
+            }
+        }
 
         shareButton.setOnClickListener {
-            val shareIntent = Intent(Intent.ACTION_SEND)
-            shareIntent.type = "text/plain"
-            shareIntent.putExtra(Intent.EXTRA_TEXT, deepLink)
-            startActivity(Intent.createChooser(shareIntent, "Share via"))
+            val deepLink = inviteLinkTextView.text.toString() // Get the current link from the TextView
+            if (deepLink.isNotBlank() && deepLink != "Loading invite link..." && deepLink != "Cannot generate invite link. Please join or create a group.") {
+                val shareIntent = Intent(Intent.ACTION_SEND)
+                shareIntent.type = "text/plain"
+                shareIntent.putExtra(Intent.EXTRA_TEXT, deepLink)
+                startActivity(Intent.createChooser(shareIntent, "Share via"))
+            } else {
+                Toast.makeText(requireContext(), "Invite link not available yet.", Toast.LENGTH_SHORT).show()
+            }
         }
 
         builder.setPositiveButton("OK", null)

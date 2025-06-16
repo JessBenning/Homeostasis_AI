@@ -1,5 +1,6 @@
 package com.homeostasis.app.data
 
+import com.homeostasis.app.data.Constants
 import android.util.Log
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.DocumentChange
@@ -30,7 +31,9 @@ class FirebaseSyncManager @Inject constructor(
     private val taskRepository: TaskRepository,
     private val taskHistoryRepository: TaskHistoryRepository,
     private val userRepository: UserRepository,
-    private val householdGroupIdProvider: HouseholdGroupIdProvider,
+    private val groupDao: GroupDao, // Inject GroupDao
+    private val groupRepository: com.homeostasis.app.data.remote.GroupRepository, // Inject GroupRepository
+    private val userDao: UserDao, // Inject UserDao
     @ApplicationContext private val context: Context // Keep if needed
 ) {
 
@@ -57,10 +60,18 @@ class FirebaseSyncManager @Inject constructor(
             setupLocalTaskObserverAndInitialPush()
         }
 
-        // --- TaskHistory Synchronization ---
+        // --- Group Synchronization ---
         syncScope.launch {
-            setupRemoteTaskHistoryListenerAndInitialFetch()
+            setupRemoteGroupListenerAndInitialFetch()
         }
+        syncScope.launch {
+            setupLocalGroupObserverAndInitialPush()
+        }
+ 
+         // --- TaskHistory Synchronization ---
+         syncScope.launch {
+             setupRemoteTaskHistoryListenerAndInitialFetch()
+         }
         syncScope.launch {
             setupLocalTaskHistoryObserverAndInitialPush()
         }
@@ -96,134 +107,310 @@ class FirebaseSyncManager @Inject constructor(
         Log.d(TAG, "All Firestore listeners removed.")
     }
 
-    // --- TASKS: Remote (Firestore) -> Local (Room) ---
-    private suspend fun setupRemoteTaskListenerAndInitialFetch() { // Marked suspend
-        Log.d(TAG, "Setting up Remote Task Listener & Initial Fetch.")
-        householdGroupIdProvider.getHouseholdGroupId().collect { householdGroupId -> // collect is a suspend function
-            householdGroupId?.let {
-                // Assuming setupFirestoreListenerAndInitialFetch is NOT a suspend fun itself,
-                // but its lambdas might call suspend funs or it might be a flow collector.
-                // If it internally collects flows, it should also be suspend.
-                setupFirestoreListenerAndInitialFetch(
-                    collectionPath = Task.COLLECTION,
-                    modelClass = Task::class.java,
-                    entityName = "Task",
-                    localUpsertOrDelete = { changeType, task ->
-                        // processRemoteTaskChange is suspend, so this lambda must be called from a coroutine
-                        // This implies setupFirestoreListenerAndInitialFetch should handle launching a coroutine
-                        // for this lambda or be a suspend function itself. For now, assuming it handles it.
-                        processRemoteTaskChange(changeType, task, householdGroupId)
-                    }
-                )
-            }
+    
+        // --- GROUPS: Remote (Firestore) -> Local (Room) ---
+        private suspend fun setupRemoteGroupListenerAndInitialFetch() { // Marked suspend
+            Log.d(TAG, "Setting up Remote Group Listener & Initial Fetch.")
+            // Groups are NOT filtered by householdGroupId here, as a user needs to see the group they belong to.
+            // The filtering by householdGroupId happens when fetching tasks, history, and users.
+            // A user's membership is determined by their User document's householdGroupId.
+            // We listen to ALL group changes and process only the one the current user belongs to (or if they join/leave).
+            setupFirestoreGroupListenerAndInitialFetch() // Call specialized function
         }
+    
+    // --- GROUPS: Local (Room) -> Remote (Firestore) ---
+    private suspend fun setupLocalGroupObserverAndInitialPush() { // Marked suspend
+        Log.d(TAG, "Setting up Local Group Observer & Initial Push.")
+        val localChangesFlow = groupDao.getGroupsRequiringSync() // Get flow of groups needing sync
+
+        setupLocalEntityObserverAndInitialPush(
+            entityName = "Group",
+            localChangesFlow = localChangesFlow,
+            pushItemToFirestore = { group -> groupRepository.pushGroupToFirestore(group) }, // Use GroupRepository
+            updateLocalAfterPush = { group, success -> groupRepository.updateLocalGroupAfterPush(group, success) }, // Use GroupRepository
+            getAllLocalNeedingSyncSnapshot = { groupDao.getGroupsRequiringSync().first() } // Get snapshot for initial push
+        )
     }
 
+        // --- TASKS: Remote (Firestore) -> Local (Room) ---
+        private suspend fun setupRemoteTaskListenerAndInitialFetch() { // Marked suspend
+            Log.d(TAG, "Setting up Remote Task Listener & Initial Fetch.")
+
+            // Get the current user's ID
+            val currentUserId = userRepository.getCurrentUserId()
+
+            if (currentUserId == null) {
+                Log.w(TAG, "Cannot set up Remote Task Listener: Current user ID is null.")
+                return // Cannot set up listener without a logged-in user
+            }
+
+            // Observe the current user's householdGroupId from the local database
+            userDao.getUserByIdWithoutHouseholdIdFlow(currentUserId)
+                .map { user ->
+                    // Provide the householdGroupId from the user object, or default if null/empty
+                    user?.householdGroupId?.takeIf { it.isNotEmpty() } ?: Constants.DEFAULT_GROUP_ID
+                }
+                .distinctUntilChanged() // Only react when the householdGroupId actually changes
+                .collectLatest { householdGroupId -> // Use collectLatest to cancel previous collection when ID changes
+                    // Clean up the old listener before setting up a new one
+                    // Note: This cleans ALL listeners. Consider more granular cleanup if needed.
+                    cleanupFirestoreListeners()
+
+                    if (householdGroupId != Constants.DEFAULT_GROUP_ID) { // Only set up listener if in a specific group
+                        Log.d(TAG, "Household Group ID changed to $householdGroupId. Setting up new Remote Task Listener.")
+                        setupFirestoreListenerAndInitialFetch(
+                            collectionPath = Task.COLLECTION,
+                            modelClass = Task::class.java,
+                            entityName = "Task",
+                            localUpsertOrDelete = { changeType, task ->
+                                // Pass the current householdGroupId from the collectLatest scope
+                                processRemoteTaskChange(changeType, task, householdGroupId)
+                            },
+                            householdGroupId = householdGroupId, // Pass the obtained householdGroupId
+                            filterByHouseholdGroup = true // Explicitly filter by household group
+                        )
+                    } else {
+                        Log.d(TAG, "Household Group ID is default or empty. Removing Remote Task Listener.")
+                        // No need to set up a listener if there's no specific household group
+                    }
+                }
+        }
     // --- TASKS: Local (Room) -> Remote (Firestore) ---
     private suspend fun setupLocalTaskObserverAndInitialPush() { // Marked suspend
         Log.d(TAG, "Setting up Local Task Observer & Initial Push.")
-        // flatMapLatest and combine are flow operators, the final collect will be in setupLocalEntityObserverAndInitialPush
-        val modifiedTasksFlow = householdGroupIdProvider.getHouseholdGroupId().flatMapLatest { householdGroupId ->
-            householdGroupId?.let {
-                db.taskDao().getModifiedTasksRequiringSync(it)
-            } ?: flowOf(emptyList())
-        }
-        val deletedLocallyTasksFlow = householdGroupIdProvider.getHouseholdGroupId().flatMapLatest { householdGroupId ->
-            householdGroupId?.let {
-                db.taskDao().getLocallyDeletedTasksRequiringSync(it)
-            } ?: flowOf(emptyList())
+
+        // Get the current user's ID
+        val currentUserId = userRepository.getCurrentUserId()
+
+        if (currentUserId == null) {
+            Log.w(TAG, "Cannot set up Local Task Observer: Current user ID is null.")
+            return // Cannot set up observer without a logged-in user
         }
 
-        val combinedTasksNeedingSyncFlow = combine(modifiedTasksFlow, deletedLocallyTasksFlow) { modified, deleted ->
-            (modified + deleted).distinctBy { it.id }
-        }
+        // Observe the current user's householdGroupId from the local database
+        userDao.getUserByIdWithoutHouseholdIdFlow(currentUserId)
+            .map { user ->
+                // Provide the householdGroupId from the user object, or default if null/empty
+                user?.householdGroupId?.takeIf { it.isNotEmpty() } ?: Constants.DEFAULT_GROUP_ID
+            }
+            .distinctUntilChanged() // Only react when the householdGroupId actually changes
+            .flatMapLatest { householdGroupId -> // Use flatMapLatest to switch flows when ID changes
+                if (householdGroupId != Constants.DEFAULT_GROUP_ID) { // Only observe if in a specific group
+                    Log.d(TAG, "Household Group ID changed to $householdGroupId. Setting up new Local Task Observer.")
+                    val modifiedTasksFlow = db.taskDao().getModifiedTasksRequiringSync(householdGroupId)
+                    val deletedLocallyTasksFlow = db.taskDao().getLocallyDeletedTasksRequiringSync(householdGroupId)
 
-        // If setupLocalEntityObserverAndInitialPush internally collects localChangesFlow,
-        // then it MUST be a suspend function.
-        // The lambda for getAllLocalNeedingSyncSnapshot calls .first() which IS a suspend function.
-        // So, setupLocalEntityObserverAndInitialPush MUST handle invoking this lambda from a coroutine
-        // or be a suspend function itself.
-        setupLocalEntityObserverAndInitialPush(
-            entityName = "Task",
-            localChangesFlow = combinedTasksNeedingSyncFlow,
-            pushItemToFirestore = { task -> pushTaskToFirestore(task) }, // pushTaskToFirestore is suspend
-            updateLocalAfterPush = { task, success -> updateLocalTaskAfterPush(task, success) }, // updateLocalTaskAfterPush is suspend
-            getAllLocalNeedingSyncSnapshot = { // This lambda calls .first() which is suspend
-                // This lambda will be called by setupLocalEntityObserverAndInitialPush.
-                // It needs to be called from a coroutine scope.
-                runBlocking { // Or ensure setupLocalEntityObserverAndInitialPush calls this from a coroutine
-                    householdGroupIdProvider.getHouseholdGroupId().first()?.let { householdGroupId ->
-                        val modified = db.taskDao().getAllTasksFromRoomSnapshot(householdGroupId).filter { it.needsSync && !it.isDeletedLocally }
-                        val deleted = db.taskDao().getAllTasksFromRoomSnapshot(householdGroupId).filter { it.isDeletedLocally }
+                    combine(modifiedTasksFlow, deletedLocallyTasksFlow) { modified, deleted ->
                         (modified + deleted).distinctBy { it.id }
-                    } ?: emptyList()
+                    }
+                } else {
+                    Log.d(TAG, "Household Group ID is default or empty. Removing Local Task Observer.")
+                    flowOf(emptyList()) // Emit empty list if no specific household ID
                 }
             }
-        )
+            .collect { items -> // Collect the combined flow
+                if (items.isNotEmpty()) {
+                    Log.d(TAG, "Task: Detected ${items.size} local changes to sync.")
+                    for (item in items) {
+                        val success = pushTaskToFirestore(item)
+                        updateLocalTaskAfterPush(item, success)
+                    }
+                }
+            }
     }
 
 
     // --- TASK HISTORY: Remote (Firestore) -> Local (Room) ---
     private suspend fun setupRemoteTaskHistoryListenerAndInitialFetch() { // Marked suspend
         Log.d(TAG, "Setting up Remote TaskHistory Listener & Initial Fetch.")
-        householdGroupIdProvider.getHouseholdGroupId().collect { householdGroupId -> // collect is suspend
-            householdGroupId?.let {
-                // See comments for setupRemoteTaskListenerAndInitialFetch regarding setupFirestoreListenerAndInitialFetch
-                setupFirestoreListenerAndInitialFetch(
-                    collectionPath = TaskHistory.COLLECTION,
-                    modelClass = TaskHistory::class.java,
-                    entityName = "TaskHistory",
-                    localUpsertOrDelete = { changeType, history ->
-                        // processRemoteTaskHistoryChange is suspend
-                        processRemoteTaskHistoryChange(changeType, history, householdGroupId)
-                    }
-                )
-            }
+
+        // Get the current user's ID
+        val currentUserId = userRepository.getCurrentUserId()
+
+        if (currentUserId == null) {
+            Log.w(TAG, "Cannot set up Remote TaskHistory Listener: Current user ID is null.")
+            return // Cannot set up listener without a logged-in user
         }
+
+        // Observe the current user's householdGroupId from the local database
+        userDao.getUserByIdWithoutHouseholdIdFlow(currentUserId)
+            .map { user ->
+                // Provide the householdGroupId from the user object, or default if null/empty
+                user?.householdGroupId?.takeIf { it.isNotEmpty() } ?: Constants.DEFAULT_GROUP_ID
+            }
+            .distinctUntilChanged() // Only react when the householdGroupId actually changes
+            .collectLatest { householdGroupId -> // Use collectLatest to cancel previous collection when ID changes
+                // Clean up the old listener before setting up a new one
+                // Note: This cleans ALL listeners. Consider more granular cleanup if needed.
+                cleanupFirestoreListeners()
+
+                if (householdGroupId != Constants.DEFAULT_GROUP_ID) { // Only set up listener if in a specific group
+                    Log.d(TAG, "Household Group ID changed to $householdGroupId. Setting up new Remote TaskHistory Listener.")
+                    setupFirestoreListenerAndInitialFetch(
+                        collectionPath = TaskHistory.COLLECTION,
+                        modelClass = TaskHistory::class.java,
+                        entityName = "TaskHistory",
+                        localUpsertOrDelete = { changeType, history ->
+                            // Pass the current householdGroupId from the collectLatest scope
+                            processRemoteTaskHistoryChange(changeType, history, householdGroupId)
+                        },
+                        householdGroupId = householdGroupId, // Pass the obtained householdGroupId
+                        filterByHouseholdGroup = true // Explicitly filter by household group
+                    )
+                } else {
+                    Log.d(TAG, "Household Group ID is default or empty. Removing Remote TaskHistory Listener.")
+                    // No need to set up a listener if there's no specific household group
+                }
+            }
     }
 
     // --- TASK HISTORY: Local (Room) -> Remote (Firestore) ---
     private suspend fun setupLocalTaskHistoryObserverAndInitialPush() { // Marked suspend
         Log.d(TAG, "Setting up Local TaskHistory Observer & Initial Push.")
-        val modifiedHistoryFlow = householdGroupIdProvider.getHouseholdGroupId().flatMapLatest { householdGroupId ->
-            householdGroupId?.let {
-                db.taskHistoryDao().getModifiedTaskHistoryRequiringSync(it)
-            } ?: flowOf(emptyList())
+
+        // Get the current user's ID
+        val currentUserId = userRepository.getCurrentUserId()
+
+        if (currentUserId == null) {
+            Log.w(TAG, "Cannot set up Local TaskHistory Observer: Current user ID is null.")
+            return // Cannot set up observer without a logged-in user
         }
 
-        // Add flow for locally deleted task history
-        val deletedLocallyHistoryFlow = householdGroupIdProvider.getHouseholdGroupId().flatMapLatest { householdGroupId ->
-            householdGroupId?.let {
-                db.taskHistoryDao().getLocallyDeletedTaskHistoryRequiringSync(it)
-            } ?: flowOf(emptyList())
-        }
+        // Observe the current user's householdGroupId from the local database
+        userDao.getUserByIdWithoutHouseholdIdFlow(currentUserId)
+            .map { user ->
+                // Provide the householdGroupId from the user object, or default if null/empty
+                user?.householdGroupId?.takeIf { it.isNotEmpty() } ?: Constants.DEFAULT_GROUP_ID
+            }
+            .distinctUntilChanged() // Only react when the householdGroupId actually changes
+            .flatMapLatest { householdGroupId -> // Use flatMapLatest to switch flows when ID changes
+                if (householdGroupId != Constants.DEFAULT_GROUP_ID) { // Only observe if in a specific group
+                    Log.d(TAG, "Household Group ID changed to $householdGroupId. Setting up new Local TaskHistory Observer.")
+                    val modifiedHistoryFlow = db.taskHistoryDao().getModifiedTaskHistoryRequiringSync(householdGroupId)
+                    val deletedLocallyHistoryFlow = db.taskHistoryDao().getLocallyDeletedTaskHistoryRequiringSync(householdGroupId)
 
-        // Combine modified and locally deleted history flows
-        val combinedHistoryNeedingSyncFlow = combine(modifiedHistoryFlow, deletedLocallyHistoryFlow) { modified, deleted ->
-            (modified + deleted).distinctBy { it.id }
-        }
-
-        // See comments for setupLocalTaskObserverAndInitialPush regarding setupLocalEntityObserverAndInitialPush
-        setupLocalEntityObserverAndInitialPush(
-            entityName = "TaskHistory",
-            localChangesFlow = combinedHistoryNeedingSyncFlow, // Use the combined flow
-            pushItemToFirestore = { history -> pushTaskHistoryToFirestore(history) }, // pushTaskHistoryToFirestore is suspend
-            updateLocalAfterPush = { history, success -> updateLocalTaskHistoryAfterPush(history, success) }, // updateLocalTaskHistoryAfterPush is suspend
-            getAllLocalNeedingSyncSnapshot =  { // This lambda calls .first() which is suspend
-                runBlocking { // Or ensure setupLocalEntityObserverAndInitialPush calls this from a coroutine
-                    householdGroupIdProvider.getHouseholdGroupId().first()?.let { householdGroupId ->
-                        // Include both modified and locally deleted in the snapshot
-                        val modified = db.taskHistoryDao().getAllTaskHistoryBlocking(householdGroupId).filter { it.needsSync && !it.isDeletedLocally }
-                        val deleted = db.taskHistoryDao().getAllTaskHistoryBlocking(householdGroupId).filter { it.isDeletedLocally }
+                    combine(modifiedHistoryFlow, deletedLocallyHistoryFlow) { modified, deleted ->
                         (modified + deleted).distinctBy { it.id }
-                    } ?: emptyList()
+                    }
+                } else {
+                    Log.d(TAG, "Household Group ID is default or empty. Removing Local TaskHistory Observer.")
+                    flowOf(emptyList()) // Emit empty list if no specific household ID
                 }
             }
-        )
+            .collect { items -> // Collect the combined flow
+                if (items.isNotEmpty()) {
+                    Log.d(TAG, "TaskHistory: Detected ${items.size} local changes to sync.")
+                    for (item in items) {
+                        val success = pushTaskHistoryToFirestore(item)
+                        updateLocalTaskHistoryAfterPush(item, success)
+                    }
+                }
+            }
     }
 
 
     // === SPECIFIC PROCESSING HELPERS (WORKER FUNCTIONS) ===
+
+    // --- Group Specific Helpers ---
+
+    private suspend fun processRemoteGroupChange(changeType: DocumentChange.Type, remoteGroupSource: com.homeostasis.app.data.model.Group) {
+        val specificTag = "$TAG_REMOTE_TO_LOCAL-Group"
+        val groupFromRemoteClean = remoteGroupSource.copy(needsSync = false) // Groups don't have isDeletedLocally flag
+
+        Log.d(specificTag, "Processing remote Group change: Type=$changeType, ID=${groupFromRemoteClean.id}")
+        when (changeType) {
+            DocumentChange.Type.ADDED, DocumentChange.Type.MODIFIED -> {
+                // Upsert the group into the local database
+                groupDao.upsert(groupFromRemoteClean)
+                Log.d(specificTag, "Upserted Group ${groupFromRemoteClean.id} from remote.")
+            }
+            DocumentChange.Type.REMOVED -> {
+                Log.d(specificTag, "Remote Group REMOVED: ${groupFromRemoteClean.id}. Triggering cascading effects.")
+                // Trigger cascading deletion effects, defaulting to NOT keeping tasks on other clients
+                handleGroupDeletionCascadingEffects(groupFromRemoteClean.id, false)
+                // The local group deletion is handled within handleGroupDeletionCascadingEffects
+            }
+        }
+    }
+
+    /**
+     * Handles the cascading deletion and updates of data associated with a deleted group.
+     * This is triggered when a group is removed from Firestore.
+     *
+     * @param deletedGroupId The ID of the group that was deleted.
+     * @param keepTasks Flag indicating whether to keep tasks associated with the group owner.
+     */
+    private suspend fun handleGroupDeletionCascadingEffects(deletedGroupId: String, keepTasks: Boolean) {
+        val specificTag = "$TAG-GroupDeletion"
+        Log.d(specificTag, "Handling cascading effects for deleted group: $deletedGroupId (Keep Tasks: $keepTasks)")
+
+        try {
+            // 1. Update/Delete associated Users
+            // Query for all users belonging to this group
+            val usersInGroup = db.userDao().getUsersByHouseholdGroupIdSnapshot(deletedGroupId) // Assuming a snapshot query exists
+            val userBatch = firestore.batch()
+            usersInGroup.forEach { user ->
+                // Update user's householdGroupId to null/default and mark for sync
+                val updatedUser = user.copy(householdGroupId = "", needsSync = true) // Assuming "" is the default for no group
+                db.userDao().upsertUser(updatedUser) // Update locally
+                // Prepare remote update (Firestore doesn't need needsSync/isDeletedLocally)
+                userBatch.update(firestore.collection(com.homeostasis.app.data.model.User.COLLECTION).document(user.id), "householdGroupId", "")
+                Log.d(specificTag, "Prepared remote update for user ${user.id}: householdGroupId cleared.")
+            }
+            userBatch.commit().await() // Commit user updates
+            Log.d(specificTag, "Committed remote updates for ${usersInGroup.size} users.")
+
+            // 2. Delete associated TaskHistory
+            // Query for all task history belonging to this group
+            val historyInGroup = db.taskHistoryDao().getAllTaskHistoryBlocking(deletedGroupId) // Assuming a blocking query exists
+            val historyBatch = firestore.batch()
+            historyInGroup.forEach { history ->
+                // Delete locally
+                db.taskHistoryDao().delete(history)
+                // Prepare remote deletion
+                historyBatch.delete(firestore.collection(com.homeostasis.app.data.model.TaskHistory.COLLECTION).document(history.id))
+                Log.d(specificTag, "Prepared remote deletion for task history ${history.id}.")
+            }
+            historyBatch.commit().await() // Commit history deletions
+            Log.d(specificTag, "Committed remote deletions for ${historyInGroup.size} task history records.")
+
+            // 3. Delete/Update associated Tasks (Conditional)
+            val tasksInGroup = db.taskDao().getAllTasksFromRoomSnapshot(deletedGroupId) // Assuming a snapshot query exists
+            val taskBatch = firestore.batch()
+
+            if (keepTasks) {
+                // Keep tasks: Update householdGroupId to null/default
+                tasksInGroup.forEach { task ->
+                    // Update locally
+                    val updatedTask = task.copy(householdGroupId = "", needsSync = true) // Assuming "" is default
+                    db.taskDao().upsertTask(updatedTask)
+                    // Prepare remote update
+                    taskBatch.update(firestore.collection(com.homeostasis.app.data.model.Task.COLLECTION).document(task.id), "householdGroupId", "")
+                    Log.d(specificTag, "Prepared remote update for task ${task.id}: householdGroupId cleared.")
+                }
+                taskBatch.commit().await() // Commit task updates
+                Log.d(specificTag, "Committed remote updates for ${tasksInGroup.size} tasks (kept).")
+
+            } else {
+                // Delete tasks
+                tasksInGroup.forEach { task ->
+                    // Delete locally
+                    db.taskDao().hardDeleteTaskFromRoom(task) // Assuming hard delete function exists
+                    // Prepare remote deletion
+                    taskBatch.delete(firestore.collection(com.homeostasis.app.data.model.Task.COLLECTION).document(task.id))
+                    Log.d(specificTag, "Prepared remote deletion for task ${task.id}.")
+                }
+                taskBatch.commit().await() // Commit task deletions
+                Log.d(specificTag, "Committed remote deletions for ${tasksInGroup.size} tasks.")
+            }
+
+            Log.i(specificTag, "Completed cascading effects for deleted group: $deletedGroupId.")
+
+        } catch (e: Exception) {
+            Log.e(specificTag, "Error handling cascading effects for group deletion $deletedGroupId", e)
+            // TODO: Implement retry or error handling mechanism
+        }
+    }
 
     // --- Task Specific Helpers ---
 
@@ -409,27 +596,67 @@ class FirebaseSyncManager @Inject constructor(
     // If they call 'collect' on a flow, or if their lambda parameters call suspend functions,
     // they need to be 'suspend' functions themselves or manage coroutine scopes internally.
 
+    // Specialized Firestore listener setup for Group entities
+    private suspend fun setupFirestoreGroupListenerAndInitialFetch() {
+        Log.d(TAG, "Setting up Firestore listener for Group on path ${com.homeostasis.app.data.model.Group.COLLECTION}")
+
+        val collectionQuery = firestore.collection(com.homeostasis.app.data.model.Group.COLLECTION)
+
+        val listener = collectionQuery
+            .addSnapshotListener { snapshots, e ->
+                if (e != null) {
+                    Log.w(TAG, "Listen failed for Group.", e)
+                    return@addSnapshotListener
+                }
+
+                syncScope.launch { // Launch coroutine to handle snapshots and call suspend lambda
+                    for (dc in snapshots!!.documentChanges) {
+                        val item = dc.document.toObject(com.homeostasis.app.data.model.Group::class.java)
+                        if (item != null) {
+                            Log.d(TAG, "Group: Remote change: ${dc.type} for doc ${dc.document.id}")
+                            try {
+                                // Call the suspend lambda within the coroutine scope
+                                processRemoteGroupChange(dc.type, item) // Call the specific group processing function
+                            } catch (ex: Exception) {
+                                Log.e(TAG, "Error processing Group remote change for ${dc.document.id}", ex)
+                            }
+                        } else {
+                            Log.w(TAG, "Group: Failed to convert document ${dc.document.id} to Group")
+                        }
+                    }
+                }
+            }
+        firestoreListeners.add(listener)
+    }
+
+
     private suspend fun <T : Any> setupFirestoreListenerAndInitialFetch( // Marked suspend
         collectionPath: String,
         modelClass: Class<T>,
         entityName: String,
-        localUpsertOrDelete: suspend (DocumentChange.Type, T) -> Unit // Made suspend
+        localUpsertOrDelete: suspend (DocumentChange.Type, T) -> Unit, // Made suspend
+        householdGroupId: String?, // Accept householdGroupId as a parameter
+        filterByHouseholdGroup: Boolean = true // Keep filterByHouseholdGroup parameter
     ) {
         // This function sets up a Firestore listener. The listener's callback will receive data.
         // The 'localUpsertOrDelete' lambda is suspend, so it must be called from a coroutine.
         // This implies that the Firestore listener callback should launch a coroutine.
-        Log.d(TAG, "Setting up Firestore listener for $entityName on path $collectionPath")
+        Log.d(TAG, "Setting up Firestore listener for $entityName on path $collectionPath with householdGroupId: $householdGroupId")
 
-        // Get the current household group ID
-        val householdGroupId = householdGroupIdProvider.getHouseholdGroupId().first() // Use first() to get the current value
-
-        if (householdGroupId == null) {
-            Log.w(TAG, "Cannot set up Firestore listener for $entityName: Household Group ID is null.")
-            return // Cannot set up listener without a household group ID
+        if (filterByHouseholdGroup && (householdGroupId == null || householdGroupId.isEmpty())) {
+            Log.w(TAG, "Cannot set up Firestore listener for $entityName: Household Group ID is null or empty and filtering is enabled.")
+            return // Cannot set up listener without a valid household group ID if filtering
         }
 
-        val listener = firestore.collection(collectionPath)
-            .whereEqualTo("householdGroupId", householdGroupId) // Filter by householdGroupId
+        val collectionQuery = firestore.collection(collectionPath)
+        val filteredQuery = if (filterByHouseholdGroup && householdGroupId != null) {
+            collectionQuery.whereEqualTo("householdGroupId", householdGroupId) // Filter by householdGroupId
+        } else {
+            collectionQuery // No filtering if filterByHouseholdGroup is false or householdGroupId is null
+        }
+
+
+        val listener = filteredQuery
             .addSnapshotListener { snapshots, e ->
                 if (e != null) {
                     Log.w(TAG, "Listen failed for $entityName.", e)
@@ -443,6 +670,7 @@ class FirebaseSyncManager @Inject constructor(
                         if (item != null) {
                             Log.d(TAG, "$entityName: Remote change: ${dc.type} for doc ${dc.document.id}")
                             try {
+                                // Call the suspend lambda within the coroutine scope
                                 localUpsertOrDelete(dc.type, item)
                             } catch (ex: Exception) {
                                 Log.e(TAG, "Error processing $entityName remote change for ${dc.document.id}", ex)
@@ -520,85 +748,40 @@ class FirebaseSyncManager @Inject constructor(
      */
     private suspend fun setupLocalUserObserverAndInitialPush() { // Marked suspend
         Log.d(TAG, "Setting up Local User Observer & Initial Push.")
-        val modifiedUsersFlow = householdGroupIdProvider.getHouseholdGroupId().flatMapLatest { householdGroupId ->
-            householdGroupId?.let {
-                db.userDao().getUsersRequiringSync(it) // Use the new query
-            } ?: flowOf(emptyList())
+
+        // Get the current user's ID
+        val currentUserId = userRepository.getCurrentUserId()
+
+        if (currentUserId == null) {
+            Log.w(TAG, "Cannot set up Local User Observer: Current user ID is null.")
+            return // Cannot set up observer without a logged-in user
         }
 
-        setupLocalEntityObserverAndInitialPush(
-            entityName = "User",
-            localChangesFlow = modifiedUsersFlow,
-            pushItemToFirestore = { user -> // Modified lambda to handle image upload using derived local path
-                val specificTag = "$TAG_LOCAL_TO_REMOTE-User"
-                var overallSuccess = false // Track overall success
-
-                try {
-                    var userToPush = user
-                    var uploadSuccess = true
-                    var cloudStorageUrl: String? = null
-
-                    // Derive the local profile picture file path
-                    val localFilePath = File(context.filesDir, "profile_picture_${user.id}.jpg").absolutePath
-                    val localFile = File(localFilePath)
-
-                    // Check if the local profile image file exists
-                    if (localFile.exists()) {
-                        Log.d(specificTag, "Uploading profile picture for user ${user.id} from local file: ${localFile.path}")
-                        // Upload image to Firebase Storage
-                        cloudStorageUrl = userRepository.uploadProfilePicture(user.id, localFile) // Use UserRepository for upload
-                        uploadSuccess = cloudStorageUrl != null
-
-                        if (uploadSuccess) {
-                            Log.d(specificTag, "Profile picture uploaded successfully for user ${user.id}. URL: $cloudStorageUrl")
-                            // Update the user object with the Cloud Storage URL
-                            userToPush = user.copy(profileImageUrl = cloudStorageUrl!!)
-                            // Do NOT delete the local file here, as per user requirement
-                        } else {
-                            Log.e(specificTag, "Failed to upload profile picture for user ${user.id}.")
-                            // If upload fails, the overall push fails.
-                            overallSuccess = false
-                        }
-                    }
-
-                    // If image upload was successful (or no image needed upload), push the user data to Firestore
-                    if (uploadSuccess) {
-                         val firestorePushSuccess = userRepository.pushUserToFirestore(userToPush.copy(lastModifiedAt = Timestamp.now())) // Update timestamp before pushing
-                         overallSuccess = firestorePushSuccess
-                         if (!firestorePushSuccess) {
-                             Log.e(specificTag, "Firestore push failed for user ${user.id}.")
-                         }
-                    }
-
-
-                } catch (e: Exception) {
-                    Log.e(specificTag, "Error during user profile picture upload or Firestore push for user ${user.id}.", e)
-                    overallSuccess = false // Indicate push failed
-                }
-                overallSuccess // Return overall success status
-            },
-            updateLocalAfterPush = { user, success -> // Modified lambda - no longer clears local path
-                val specificTag = "$TAG_LOCAL_TO_REMOTE-User"
-                if (success) {
-                    // Update the local user to set needsSync to false
-                    val updatedUser = user.copy(
-                        needsSync = false,
-                        lastModifiedAt = Timestamp.now() // Update timestamp locally after successful sync
-                    )
-                    db.userDao().upsertUser(updatedUser)
-                    Log.d(specificTag, "Successfully updated local User ${user.id} flags after Firestore push.")
+        // Observe the current user's householdGroupId from the local database
+        userDao.getUserByIdWithoutHouseholdIdFlow(currentUserId)
+            .map { user ->
+                // Provide the householdGroupId from the user object, or default if null/empty
+                user?.householdGroupId?.takeIf { it.isNotEmpty() } ?: Constants.DEFAULT_GROUP_ID
+            }
+            .distinctUntilChanged() // Only react when the householdGroupId actually changes
+            .flatMapLatest { householdGroupId -> // Use flatMapLatest to switch flows when ID changes
+                if (householdGroupId != Constants.DEFAULT_GROUP_ID) { // Only observe if in a specific group
+                    Log.d(TAG, "Household Group ID changed to $householdGroupId. Setting up new Local User Observer.")
+                    db.userDao().getUsersRequiringSync() // Use the new query without householdGroupId
                 } else {
-                    Log.e(specificTag, "Firestore push failed for User ${user.id}. Local 'needsSync' flag remains true for retry.")
-                }
-            },
-            getAllLocalNeedingSyncSnapshot =  { // This lambda calls .first() which is suspend
-                runBlocking { // Or ensure setupLocalEntityObserverAndInitialPush calls this from a coroutine
-                    householdGroupIdProvider.getHouseholdGroupId().first()?.let { householdGroupId ->
-                        db.userDao().getUsersRequiringSync(householdGroupId).first() // Get snapshot for initial push
-                    } ?: emptyList()
+                    Log.d(TAG, "Household Group ID is default or empty. Removing Local User Observer.")
+                    flowOf(emptyList()) // Emit empty list if no specific household ID
                 }
             }
-        )
+            .collect { items -> // Collect the combined flow
+                if (items.isNotEmpty()) {
+                    Log.d(TAG, "User: Detected ${items.size} local changes to sync.")
+                    for (item in items) {
+                        val success = pushUserToFirestore(item)
+                        updateLocalUserAfterPush(item, success)
+                    }
+                }
+            }
     }
 
     /**
@@ -697,17 +880,47 @@ class FirebaseSyncManager @Inject constructor(
     }
 
     suspend fun syncUsers() { // Marked suspend
-        Log.d(TAG, "syncUsers called - Setting up Remote User Listener & Initial Fetch.")
-        // setupFirestoreListenerAndInitialFetch is now suspend and handles householdGroupId internally
-        setupFirestoreListenerAndInitialFetch(
-            collectionPath = com.homeostasis.app.data.model.User.COLLECTION, // Use User.COLLECTION
-            modelClass = com.homeostasis.app.data.model.User::class.java, // Use User class
-            entityName = "User",
-            localUpsertOrDelete = { changeType, user ->
-                processRemoteUserChange(changeType, user, householdGroupIdProvider.getHouseholdGroupId().first()!!) // Pass householdGroupId
+        Log.d(TAG, "syncUsers called - Setting up Remote User Listener based on Household Group ID changes from local DB.")
+
+        // Get the current user's ID
+        val currentUserId = userRepository.getCurrentUserId()
+
+        if (currentUserId == null) {
+            Log.w(TAG, "Cannot set up User sync: Current user ID is null.")
+            return // Cannot sync users without a logged-in user
+        }
+
+        // Observe the current user's householdGroupId from the local database
+        userDao.getUserByIdWithoutHouseholdIdFlow(currentUserId)
+            .map { user ->
+                // Provide the householdGroupId from the user object, or default if null/empty
+                user?.householdGroupId?.takeIf { it.isNotEmpty() } ?: Constants.DEFAULT_GROUP_ID
             }
-        )
+            .distinctUntilChanged() // Only react when the householdGroupId actually changes
+            .collectLatest { householdGroupId -> // Use collectLatest to cancel previous collection when ID changes
+                // Clean up the old listener before setting up a new one
+                cleanupFirestoreListeners() // This cleans ALL listeners, might need more granular control if other listeners shouldn't be affected
+
+                if (householdGroupId != Constants.DEFAULT_GROUP_ID) { // Only set up listener if in a specific group
+                    Log.d(TAG, "Household Group ID changed to $householdGroupId. Setting up new Remote User Listener.")
+                    setupFirestoreListenerAndInitialFetch(
+                        collectionPath = com.homeostasis.app.data.model.User.COLLECTION, // Use User.COLLECTION
+                        modelClass = com.homeostasis.app.data.model.User::class.java, // Use User class
+                        entityName = "User",
+                        localUpsertOrDelete = { changeType, user ->
+                            // Pass the current householdGroupId from the collectLatest scope
+                            processRemoteUserChange(changeType, user, householdGroupId)
+                        },
+                        householdGroupId = householdGroupId, // Pass the obtained householdGroupId
+                        filterByHouseholdGroup = true // Explicitly filter by household group
+                    )
+                } else {
+                    Log.d(TAG, "Household Group ID is default or empty. Removing Remote User Listener.")
+                    // No need to set up a listener if there's no specific household group
+                }
+            }
     }
+
 
     /**
      * Syncs locally deleted task history by deleting corresponding documents from Firestore
@@ -716,11 +929,21 @@ class FirebaseSyncManager @Inject constructor(
     suspend fun syncDeletedTaskHistoryRemote() {
         val specificTag = "$TAG_LOCAL_TO_REMOTE-TaskHistory-Reset"
         Log.d(specificTag, "Starting remote sync for deleted task history.")
-        val householdGroupId = householdGroupIdProvider.getHouseholdGroupId().first()
 
-        if (householdGroupId == null) {
-            Log.w(specificTag, "Cannot sync deleted task history: Household Group ID is null.")
-            return
+        // Get the current user's ID
+        val currentUserId = userRepository.getCurrentUserId()
+
+        if (currentUserId == null) {
+            Log.w(specificTag, "Cannot sync deleted task history: Current user ID is null.")
+            return // Cannot sync without a logged-in user
+        }
+
+        // Get the current user's householdGroupId from the local database
+        val householdGroupId = userDao.getUserByIdWithoutHouseholdIdFlow(currentUserId).first()?.householdGroupId?.takeIf { it.isNotEmpty() } ?: Constants.DEFAULT_GROUP_ID
+
+        if (householdGroupId == Constants.DEFAULT_GROUP_ID) {
+            Log.w(specificTag, "Cannot sync deleted task history: Household Group ID is default or empty.")
+            return // Cannot sync if not in a specific group
         }
 
         try {

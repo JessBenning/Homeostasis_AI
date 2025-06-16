@@ -28,7 +28,7 @@
     <fragment
         android:id="@+id/navigation_tasks"
         android:name="com.homeostasis.app.ui.tasks.TaskListFragment"
-        android:label="@string/tasks_title"
+
         tools:layout="@layout/fragment_task_list">
         <action
             android:id="@+id/action_tasks_to_task_detail"
@@ -82,28 +82,28 @@
     <fragment
         android:id="@+id/navigation_task_history"
         android:name="com.homeostasis.app.ui.task_history.TaskHistoryFragment"
-        android:label="@string/task_history_title"
+
         tools:layout="@layout/fragment_task_history" />
 
     <!-- Profile -->
     <fragment
         android:id="@+id/navigation_profile"
-        android:name="com.homeostasis.app.ui.profile.ProfileSettingsFragment"
-        android:label="@string/profile_title"
+        android:name="com.homeostasis.app.ui.settings.ProfileSettingsFragment"
+
         tools:layout="@layout/fragment_profile_settings" />
 
         <!-- Household Group -->
         <fragment
             android:id="@+id/navigation_household_group"
-            android:name="com.homeostasis.app.ui.settings.HouseholdGroupFragment"
-            android:label="@string/title_household_group"
-            tools:layout="@layout/fragment_household_group" />
+            android:name="com.homeostasis.app.ui.settings.GroupAdminFragment"
+            android:label="@string/title_default_group"
+            tools:layout="@layout/fragment_setting_group_admin" />
     
         <!-- Settings -->
         <fragment
             android:id="@+id/navigation_settings"
             android:name="com.homeostasis.app.ui.settings.SettingsFragment"
-            android:label="@string/settings_title"
+
             tools:layout="@layout/fragment_settings" >
             <action
                 android:id="@+id/action_navigation_settings_to_navigation_household_group"

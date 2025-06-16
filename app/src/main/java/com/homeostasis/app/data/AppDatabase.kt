@@ -1,30 +1,27 @@
 package com.homeostasis.app.data
 
-import com.homeostasis.app.data.model.HouseholdGroup
-import com.homeostasis.app.data.model.Invitation
+
 import com.homeostasis.app.data.model.Task
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import android.content.Context
 import android.util.Log
-import androidx.room.Room
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-//TODO: change exportSchema to true for production
+
 @Database(
-    entities = [Task::class, com.homeostasis.app.data.model.HouseholdGroup::class, com.homeostasis.app.data.model.Invitation::class, com.homeostasis.app.data.model.User::class, com.homeostasis.app.data.model.TaskHistory::class],
-    version = 13, // Database version
+    entities = [Task::class, com.homeostasis.app.data.model.User::class, com.homeostasis.app.data.model.TaskHistory::class, com.homeostasis.app.data.model.Group::class], // Removed HouseholdGroup and Invitation entities
+    version = 14, // Database version
     exportSchema = true
 )
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun taskDao(): TaskDao
-    abstract fun householdGroupDao(): HouseholdGroupDao
-    abstract fun invitationDao(): InvitationDao
     abstract fun userDao(): UserDao
     abstract fun taskHistoryDao(): TaskHistoryDao
+    abstract fun groupDao(): GroupDao // Keep GroupDao
 
     companion object {
         @Volatile
@@ -45,14 +42,18 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_9_10,
                     MIGRATION_10_11,
                     MIGRATION_11_12,
-                    MIGRATION_12_13
+                    MIGRATION_12_13,
+                    MIGRATION_13_14
                 )
-                .fallbackToDestructiveMigrationFrom(13) // Allow destructive migration from version 13
+                // Remove fallbackToDestructiveMigrationFrom(13) as we are providing a migration for 13->14
                 .build()
                 INSTANCE = instance
                 instance
             }
         }
+
+
+
         val MIGRATION_4_5 = object : androidx.room.migration.Migration(4, 5) {
             override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
                 database.execSQL("ALTER TABLE tasks DROP COLUMN completionCount")
@@ -171,6 +172,62 @@ abstract class AppDatabase : RoomDatabase() {
 
                 db.execSQL("PRAGMA foreign_keys=ON") // Re-enable foreign key constraints
                 Log.d("Migration", "Successfully migrated tasks table from version 12 to 13.")
+            }
+        }
+
+        // Migration from version 13 to 14
+        val MIGRATION_13_14: Migration = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Create the new 'groups' table
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `groups` (
+                        `id` TEXT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `ownerId` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        `lastModifiedAt` INTEGER NOT NULL,
+                        `needsSync` INTEGER NOT NULL DEFAULT 0,
+                        PRIMARY KEY(`id`)
+                    )
+                """.trimIndent())
+
+                // --- Migrate 'tasks' table: Remove 'createdBy', Add 'ownerId' ---
+                // 1. Create the new tasks table with the desired schema (including ownerId, excluding createdBy)
+                // Ensure all other existing columns are included.
+                db.execSQL("""
+                    CREATE TABLE tasks_new (
+                        id TEXT PRIMARY KEY NOT NULL,
+                        title TEXT NOT NULL,
+                        description TEXT NOT NULL,
+                        points INTEGER NOT NULL,
+                        categoryId TEXT NOT NULL,
+                        ownerId TEXT NOT NULL DEFAULT '', -- Add new ownerId column with a default value
+                        isDeleted INTEGER NOT NULL DEFAULT 0,
+                        createdAt INTEGER,
+                        lastModifiedAt INTEGER,
+                        needsSync INTEGER NOT NULL DEFAULT 0,
+                        isDeletedLocally INTEGER NOT NULL DEFAULT 0,
+                        isCompleted INTEGER NOT NULL DEFAULT 0,
+                        householdGroupId TEXT NOT NULL DEFAULT ''
+                    )
+                """.trimIndent())
+
+                // 2. Copy data from the old tasks table to the new tasks_new table
+                // Select all columns from the old table *except* createdBy.
+                // Provide a default value for the new ownerId column during the copy.
+                db.execSQL("""
+                    INSERT INTO tasks_new (id, title, description, points, categoryId, isDeleted, createdAt, lastModifiedAt, needsSync, isDeletedLocally, isCompleted, householdGroupId, ownerId)
+                    SELECT id, title, description, points, categoryId, isDeleted, createdAt, lastModifiedAt, needsSync, isDeletedLocally, isCompleted, householdGroupId, '' -- Provide a default value for ownerId
+                    FROM tasks
+                """.trimIndent())
+
+                // 3. Drop the old tasks table
+                db.execSQL("DROP TABLE tasks")
+
+                // 4. Rename the new table to tasks
+                db.execSQL("ALTER TABLE tasks_new RENAME TO tasks")
+
+                Log.d("Migration", "Successfully migrated tasks table for version 14.")
             }
         }
 

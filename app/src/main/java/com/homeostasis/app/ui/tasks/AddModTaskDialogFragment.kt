@@ -135,29 +135,47 @@ class AddModTaskDialogFragment : DialogFragment() {
         val points = pointsEditText.text.toString().toIntOrNull() ?: 0
    //     val category = categoryDropdown.text.toString().trim()
 
-        // Create a new Task object
-        val task = Task(
-            id = java.util.UUID.randomUUID().toString(),
-            title = title,
-            description = "",//description,
-            points = points,
-            categoryId = "",//category, // Using category name as ID for now
-            createdBy = "current_user", // In a real app, this would come from authentication
-            createdAt = Timestamp.now(),
-            lastModifiedAt = Timestamp.now()
-        )
+        lifecycleScope.launch {
+            // Get current user ID and household group ID from ViewModel
+            val currentUserId = viewModel.getCurrentUserId() // Assuming ViewModel has this method
+            val householdGroupId = viewModel.getCurrentHouseholdGroupId() // Assuming ViewModel has this method
+            val groupOwnerId = viewModel.getCurrentGroupOwnerId() // Assuming ViewModel has this method
 
-        // Add the task to ViewModel
-        viewModel.addTask(task)
+            // Determine the ownerId for the task
+            val ownerId = if (householdGroupId != null && householdGroupId.isNotEmpty()) {
+                // If in a group, the owner is the group owner
+                groupOwnerId ?: currentUserId // Use group owner ID if available, otherwise current user ID as fallback
+            } else {
+                // If not in a group, the owner is the current user
+                currentUserId
+            }
 
-        // Notify the listener
-        listener?.onTaskAdded(task)
+            // Create a new Task object
+            val task = Task(
+                id = java.util.UUID.randomUUID().toString(),
+                title = title,
+                description = "", // description,
+                points = points,
+                categoryId = "", // category, // Using category name as ID for now
+                ownerId = ownerId ?: "", // Set the determined ownerId, default to empty string if null
+                householdGroupId = householdGroupId ?: "", // Set the householdGroupId, default to empty string if null
+                createdAt = Timestamp.now(),
+                lastModifiedAt = Timestamp.now()
+                // needsSync and isDeletedLocally will be set by the Task constructor defaults
+            )
 
-        // Show a success message
-        Toast.makeText(requireContext(), "Task added successfully", Toast.LENGTH_SHORT).show()
+            // Add the task to ViewModel
+            viewModel.addTask(task)
 
-        // Dismiss the dialog
-        dismiss()
+            // Notify the listener
+            listener?.onTaskAdded(task)
+
+            // Show a success message
+            Toast.makeText(requireContext(), "Task added successfully", Toast.LENGTH_SHORT).show()
+
+            // Dismiss the dialog
+            dismiss()
+        }
     }
 
     private fun updateExistingTask() {

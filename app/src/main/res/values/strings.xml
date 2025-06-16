@@ -73,10 +73,12 @@
     <string name="profile_current_score">Current Score: %1$d points</string>
     <string name="profile_rank">Rank: %1$s</string>
     <string name="profile_task_history">Task History</string>
-    
+
+    <!-- Groups -->
+    <string name="title_default_group">Unknown Group</string>
+
     <!-- Settings -->
     <string name="settings_title">Settings</string>
-    <string name="title_household_group">Household Group</string>
     <string name="settings_cloud_sync">Cloud Sync</string>
     <string name="settings_cloud_sync_enabled">Enable Cloud Sync</string>
     <string name="settings_cloud_sync_frequency">Sync Frequency</string>
@@ -87,6 +89,10 @@
     <string name="settings_reset_relative">Relative (Subtract threshold)</string>
     <string name="settings_reset_percentage">Percentage (Keep 10% of excess)</string>
     <string name="settings_preserve_differences">Preserve score differences</string>
+    <string name="settings_group_create_new">Create Group</string>
+    <string name="settings_group_name">Group Name</string>
+    <string name="settings_group_create_button">Create</string>
+    <string name="title_tasks">Tasks</string>
     
     <!-- Auth -->
     <string name="auth_login">Login</string>

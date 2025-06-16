@@ -1,5 +1,6 @@
 package com.homeostasis.app.ui.tasks
 
+import com.homeostasis.app.data.Constants
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -14,7 +15,7 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 import com.homeostasis.app.data.remote.UserRepository
 import kotlinx.coroutines.flow.distinctUntilChanged
-import com.homeostasis.app.data.HouseholdGroupIdProvider
+import com.homeostasis.app.data.model.Group
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -31,7 +32,8 @@ class TaskListViewModel @Inject constructor(
     private val userRepository: UserRepository,
     private val taskHistoryDao: TaskHistoryDao,
     private val taskDao: TaskDao,
-    private val householdGroupIdProvider: HouseholdGroupIdProvider
+    private val groupRepository: com.homeostasis.app.data.remote.GroupRepository, // Inject GroupRepository
+    private val userDao: com.homeostasis.app.data.UserDao // Inject UserDao
 ) : ViewModel() {
 
     private val _tasks = MutableStateFlow<List<Task>>(emptyList())
@@ -68,31 +70,42 @@ class TaskListViewModel @Inject constructor(
 
     private fun setupDisplayTasksFlow() {
         viewModelScope.launch {
-            householdGroupIdProvider.getHouseholdGroupId()
+            // Get the current user's ID
+            val currentUserId = userRepository.getCurrentUserId()
+
+            if (currentUserId == null) {
+                Log.w(TAG, "Cannot set up display tasks flow: Current user ID is null.")
+                _displayTasks.value = emptyList() // Emit empty list if no user
+                return@launch // Exit the coroutine if no user
+            }
+
+            // Observe the current user's householdGroupId from the local database
+            userDao.getUserByIdWithoutHouseholdIdFlow(currentUserId)
+                .map { user ->
+                    // Provide the householdGroupId from the user object, or default if null/empty
+                    user?.householdGroupId?.takeIf { it.isNotEmpty() } ?: com.homeostasis.app.data.Constants.DEFAULT_GROUP_ID
+                }
+                .distinctUntilChanged() // Only react when the householdGroupId actually changes
                 .flatMapLatest { householdGroupId ->
-                    if (householdGroupId != null) {
-                        Log.d(TAG, "flatMapLatest: new householdGroupId: $householdGroupId. Combining TaskDao and HistoryTrigger.")
+                    Log.d(TAG, "flatMapLatest: new householdGroupId: $householdGroupId. Combining TaskDao and HistoryTrigger.")
+                    if (householdGroupId != com.homeostasis.app.data.Constants.DEFAULT_GROUP_ID) { // Only combine if in a specific group
                         combine(
-                            taskDao.getActiveVisibleTasks(householdGroupId), // Flow<List<Task>>
+                            taskDao.getActiveVisibleTasks(householdGroupId), // Flow<List<Task>> filtered by group
                             taskHistoryChangeTrigger // Flow<Int> - our trigger
                         ) { tasksFromDb, triggerValue -> // tasksFromDb is List<Task>, triggerValue is the Int (not directly used but signals change)
                             Log.d(TAG, "Combine triggered: Tasks count = ${tasksFromDb.size}, Trigger value = $triggerValue. Processing for display...")
                             _tasks.value = tasksFromDb // Update raw task list if needed
 
-                            // Re-fetch householdId within the combine block to ensure it's current if it can change rapidly,
-                            // or pass it down if flatMapLatest guarantees it's the one we need for this emission.
-                            // For simplicity, re-fetching or using the one from flatMapLatest's scope:
-                            val currentHId = householdGroupId // Use the householdGroupId from the outer flatMapLatest scope
-
                             val sortedTasksFromDb = tasksFromDb.sortedBy { it.title.lowercase() } // Sort by lowercase title for case-insensitive sort
-
 
                             sortedTasksFromDb.map { task ->
                                 async(viewModelScope.coroutineContext) {
-                                    val latestHistory = taskHistoryDao.getLatestTaskHistoryForTask(task.id, currentHId)
+                                    // Fetch history for this task within the current household group
+                                    val latestHistory = taskHistoryDao.getLatestTaskHistoryForTask(task.id, householdGroupId)
                                     var lastCompletedByName: String? = null // Default to null, then "N/A" if still null after check
                                     if (latestHistory?.userId != null) {
-                                        val user = userRepository.getUser(latestHistory.userId)
+                                        // Fetch user for history entry within the current household group
+                                        val user = userRepository.getUser(latestHistory.userId) // getUser now handles householdGroupId internally
                                         lastCompletedByName = user?.name ?: "Unknown User"
                                     } else {
                                         lastCompletedByName = "N/A"
@@ -108,8 +121,8 @@ class TaskListViewModel @Inject constructor(
                             }.awaitAll()
                         }
                     } else {
-                        Log.d(TAG, "flatMapLatest: householdGroupId is null, emitting empty list for displayTasks.")
-                        flowOf(emptyList<DisplayTask>()) // Emit empty if no household ID
+                        Log.d(TAG, "flatMapLatest: householdGroupId is default, emitting empty list for displayTasks.")
+                        flowOf(emptyList<DisplayTask>()) // Emit empty if no specific household ID
                     }
                 }
                 .distinctUntilChanged() // Only update _displayTasks if the content actually changes
@@ -122,8 +135,13 @@ class TaskListViewModel @Inject constructor(
 
     fun addTask(task: Task) {
         viewModelScope.launch {
-            val currentHouseholdId = householdGroupIdProvider.getHouseholdGroupId().first()
-                ?: HouseholdGroupIdProvider.DEFAULT_HOUSEHOLD_GROUP_ID
+            val currentUserId = userRepository.getCurrentUserId()
+            val currentHouseholdId = if (currentUserId != null) {
+                userDao.getUserByIdWithoutHouseholdIdFlow(currentUserId).first()?.householdGroupId?.takeIf { it.isNotEmpty() } ?: com.homeostasis.app.data.Constants.DEFAULT_GROUP_ID
+            } else {
+                com.homeostasis.app.data.Constants.DEFAULT_GROUP_ID
+            }
+
             val taskToInsertLocally = task.copy(
                 isDeleted = false,
                 lastModifiedAt = Timestamp.now(),
@@ -139,8 +157,12 @@ class TaskListViewModel @Inject constructor(
 
     fun updateTask(task: Task) {
         viewModelScope.launch {
-            val currentHouseholdId = householdGroupIdProvider.getHouseholdGroupId().first()
-                ?: HouseholdGroupIdProvider.DEFAULT_HOUSEHOLD_GROUP_ID
+            val currentUserId = userRepository.getCurrentUserId()
+            val currentHouseholdId = if (currentUserId != null) {
+                userDao.getUserByIdWithoutHouseholdIdFlow(currentUserId).first()?.householdGroupId?.takeIf { it.isNotEmpty() } ?: com.homeostasis.app.data.Constants.DEFAULT_GROUP_ID
+            } else {
+                com.homeostasis.app.data.Constants.DEFAULT_GROUP_ID
+            }
             val taskToUpdateLocally = task.copy(
                 lastModifiedAt = Timestamp.now(),
                 needsSync = true,
@@ -155,8 +177,12 @@ class TaskListViewModel @Inject constructor(
     fun deleteTask(task: Task) {
         viewModelScope.launch {
             if (task.id.isNotBlank()) {
-                val currentHouseholdId = householdGroupIdProvider.getHouseholdGroupId().first()
-                    ?: HouseholdGroupIdProvider.DEFAULT_HOUSEHOLD_GROUP_ID
+                val currentUserId = userRepository.getCurrentUserId()
+                val currentHouseholdId = if (currentUserId != null) {
+                    userDao.getUserByIdWithoutHouseholdIdFlow(currentUserId).first()?.householdGroupId?.takeIf { it.isNotEmpty() } ?: com.homeostasis.app.data.Constants.DEFAULT_GROUP_ID
+                } else {
+                    com.homeostasis.app.data.Constants.DEFAULT_GROUP_ID
+                }
                 Log.d(TAG, "Marking task for local deletion and sync: ${task.id}")
                 val taskToMarkAsDeleted = task.copy(
                     isDeletedLocally = true,
@@ -178,8 +204,12 @@ class TaskListViewModel @Inject constructor(
 
     suspend fun undoTaskCompletionSuspend(taskHistoryId: String): Boolean {
         val successfulUndo = try {
-            val householdGroupId = householdGroupIdProvider.getHouseholdGroupId().first()
-                ?: HouseholdGroupIdProvider.DEFAULT_HOUSEHOLD_GROUP_ID
+            val currentUserId = userRepository.getCurrentUserId()
+            val householdGroupId = if (currentUserId != null) {
+                userDao.getUserByIdWithoutHouseholdIdFlow(currentUserId).first()?.householdGroupId?.takeIf { it.isNotEmpty() } ?: com.homeostasis.app.data.Constants.DEFAULT_GROUP_ID
+            } else {
+                com.homeostasis.app.data.Constants.DEFAULT_GROUP_ID
+            }
             val taskHistory = taskHistoryDao.getTaskHistoryById(taskHistoryId, householdGroupId)
 
             if (taskHistory != null && !taskHistory.isDeleted && !taskHistory.isDeletedLocally) {
@@ -205,16 +235,24 @@ class TaskListViewModel @Inject constructor(
     }
 
     suspend fun getLatestTaskHistoryIdForTaskAndUser(taskId: String, userId: String): String? {
-        val householdGroupId = householdGroupIdProvider.getHouseholdGroupId().first()
-            ?: HouseholdGroupIdProvider.DEFAULT_HOUSEHOLD_GROUP_ID
+        val currentUserId = userRepository.getCurrentUserId()
+        val householdGroupId = if (currentUserId != null) {
+            userDao.getUserByIdWithoutHouseholdIdFlow(currentUserId).first()?.householdGroupId?.takeIf { it.isNotEmpty() } ?: com.homeostasis.app.data.Constants.DEFAULT_GROUP_ID
+        } else {
+            com.homeostasis.app.data.Constants.DEFAULT_GROUP_ID
+        }
         val latestHistory = taskHistoryDao.getLatestTaskHistoryForTaskAndUser(taskId, userId, householdGroupId)
         return latestHistory?.id
     }
 
     fun recordTaskCompletion(task: Task, userId: String, completedAtTimestamp: Timestamp? = null) {
         viewModelScope.launch {
-            val currentHouseholdId = householdGroupIdProvider.getHouseholdGroupId().first()
-                ?: HouseholdGroupIdProvider.DEFAULT_HOUSEHOLD_GROUP_ID
+            val currentUserId = userRepository.getCurrentUserId()
+            val currentHouseholdId = if (currentUserId != null) {
+                userDao.getUserByIdWithoutHouseholdIdFlow(currentUserId).first()?.householdGroupId?.takeIf { it.isNotEmpty() } ?: com.homeostasis.app.data.Constants.DEFAULT_GROUP_ID
+            } else {
+                com.homeostasis.app.data.Constants.DEFAULT_GROUP_ID
+            }
             val effectiveCompletedAt = completedAtTimestamp ?: Timestamp.now()
             val documentId = java.util.UUID.randomUUID().toString()
 
@@ -246,5 +284,32 @@ class TaskListViewModel @Inject constructor(
                 // Optionally, you might want to revert the trigger or handle the error in the UI
             }
         }
+
+
+    }
+    fun getCurrentUserId(): String? {
+        return userRepository.getCurrentUserId()
+    }
+
+    suspend fun getCurrentHouseholdGroupId(): String? {
+        val currentUserId = userRepository.getCurrentUserId()
+        return if (currentUserId != null) {
+            userDao.getUserByIdWithoutHouseholdIdFlow(currentUserId).first()?.householdGroupId?.takeIf { it.isNotEmpty() } ?: com.homeostasis.app.data.Constants.DEFAULT_GROUP_ID
+        } else {
+            com.homeostasis.app.data.Constants.DEFAULT_GROUP_ID
+        }
+    }
+
+    suspend fun getCurrentGroupOwnerId(): String? {
+        val householdGroupId = getCurrentHouseholdGroupId()
+        return if (householdGroupId != null && householdGroupId.isNotEmpty()) {
+            groupRepository.getGroupById(householdGroupId).first()?.ownerId
+        } else {
+            null
+        }
+    }
+
+    suspend fun getGroupById(groupId: String): Group? {
+        return groupRepository.getGroupById(groupId).first()
     }
 }

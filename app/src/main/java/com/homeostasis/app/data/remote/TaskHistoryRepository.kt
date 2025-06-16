@@ -1,5 +1,6 @@
 package com.homeostasis.app.data.remote
 
+import com.homeostasis.app.data.Constants
 import android.util.Log
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.Query
@@ -18,7 +19,6 @@ import javax.inject.Inject
  */
 class TaskHistoryRepository @Inject constructor(
     private val taskHistoryDao: com.homeostasis.app.data.TaskHistoryDao, // Inject TaskHistoryDao
-    private val householdGroupIdProvider: com.homeostasis.app.data.HouseholdGroupIdProvider // Inject HouseholdGroupIdProvider
 ) : FirebaseRepository<TaskHistory>() {
     
     override val collectionName: String = TaskHistory.COLLECTION
@@ -33,7 +33,7 @@ class TaskHistoryRepository @Inject constructor(
         customCompletionDate: Date? = null,
         // context: android.content.Context // No longer needed if DAO is injected or handled by ViewModel
         taskHistoryId: String // It's better to generate ID in ViewModel/before calling repo
-    ): Boolean { // Return Boolean for success
+    ): Boolean { // Return Boolean for success (local save success)
         val TAG_REPO_RECORD = "TaskHistoryRepo_Record"
         return try {
             val newHistory = TaskHistory(
@@ -47,21 +47,17 @@ class TaskHistoryRepository @Inject constructor(
                 isArchived = false,
                 archivedInResetId = null,
                 lastModifiedAt = Timestamp.now(),
-                // needsSync = true // <<<< ADD THIS if you adopt a 'needsSync' flag model
+                needsSync = true // Mark for sync
             )
 
-            // Use the injected DAO to write locally first
+            // Use the injected DAO to write locally only
             taskHistoryDao.insertOrUpdate(newHistory)
-            Log.d(TAG_REPO_RECORD, "TaskHistory ${newHistory.id} inserted into local Room DB.")
+            Log.d(TAG_REPO_RECORD, "TaskHistory ${newHistory.id} inserted into local Room DB and marked for sync.")
 
-            // Now attempt to write to Firestore as well
-            collection.document(newHistory.id).set(newHistory).await() // Use set with ID for consistency
-            Log.d(TAG_REPO_RECORD, "TaskHistory ${newHistory.id} also attempted to write to Firestore.")
-            true // Firestore write succeeded
+            true // Local save succeeded
         } catch (e: Exception) {
-            Log.e(TAG_REPO_RECORD, "Error in recordTaskCompletion for $taskId (ID: $taskHistoryId)", e)
-            // If Firestore write failed, it's still in Room and SyncManager should pick it up.
-            false // Indicate Firestore write failed
+            Log.e(TAG_REPO_RECORD, "Error in recordTaskCompletion (local save) for $taskId (ID: $taskHistoryId)", e)
+            false // Local save failed
         }
     }
 
@@ -261,13 +257,16 @@ class TaskHistoryRepository @Inject constructor(
      * Permanently deletes all task history entries for the current household group from the local database.
      * The sync manager is expected to handle the corresponding remote deletion.
      */
-    suspend fun deleteAllTaskHistory() {
-        val householdGroupId = householdGroupIdProvider.getHouseholdGroupId().first()
-        if (householdGroupId != null) {
-            taskHistoryDao.deleteAllTaskHistory(householdGroupId!!) // Use non-null assertion
+    /**
+     * Permanently deletes all task history entries for the specified household group from the local database.
+     * The sync manager is expected to handle the corresponding remote deletion.
+     */
+    suspend fun deleteAllTaskHistory(householdGroupId: String) {
+        if (householdGroupId.isNotEmpty()) {
+            taskHistoryDao.deleteAllTaskHistory(householdGroupId)
             Log.d("TaskHistoryRepo", "All task history deleted locally for household group: $householdGroupId")
         } else {
-            Log.w("TaskHistoryRepo", "Cannot delete task history, householdGroupId is null.")
+            Log.w("TaskHistoryRepo", "Cannot delete task history, provided householdGroupId is empty.")
         }
     }
 

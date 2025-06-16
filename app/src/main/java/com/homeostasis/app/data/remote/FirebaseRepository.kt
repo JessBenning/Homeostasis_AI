@@ -1,5 +1,6 @@
 package com.homeostasis.app.data.remote
 
+import android.util.Log
 import com.google.firebase.firestore.CollectionReference
 import com.google.firebase.firestore.DocumentReference
 import com.google.firebase.firestore.FirebaseFirestore
@@ -32,6 +33,7 @@ abstract class FirebaseRepository<T> {
         return try {
             collection.document(id).get().await().toObject(getModelClass())
         } catch (e: Exception) {
+            Log.d("FirebaseRepository", "Error requesting '${id}' from Firestore using collection '${collectionName}': ${e.message}.")
             null
         }
     }
