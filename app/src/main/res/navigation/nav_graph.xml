@@ -3,13 +3,13 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/nav_graph"
-    app:startDestination="@id/navigation_auth">
+    app:startDestination="@id/navigation_tasks">
 
     <!-- Authentication -->
     <fragment
         android:id="@+id/navigation_auth"
         android:name="com.homeostasis.app.ui.auth.AuthFragment"
-        android:label="@string/auth_login"
+
         tools:layout="@layout/fragment_auth">
         <action
             android:id="@+id/action_auth_to_tasks"
@@ -22,7 +22,73 @@
         <action
             android:id="@+id/action_navigation_auth_to_navigation_task_history"
             app:destination="@id/navigation_task_history" />
+        <action
+            android:id="@+id/action_navigation_auth_to_onboardingDialogFragment"
+            app:destination="@id/onboardingDialogFragment" />
     </fragment>
+
+    <dialog
+        android:id="@+id/createGroupDialogFragment"
+        android:name="com.homeostasis.app.ui.groups.CreateGroupDialogFragment"
+        android:label="Create Group"
+        tools:layout="@layout/dialog_create_group">
+<!--        <argument-->
+<!--            android:name="taskId"-->
+<!--            app:argType="string" />-->
+        <action
+            android:id="@+id/action_createGroupDialogFragment_to_navigation_tasks"
+            app:destination="@id/navigation_tasks" />
+    </dialog>
+
+    <dialog
+        android:id="@+id/createInviteDialogFragment"
+        android:name="com.homeostasis.app.ui.groups.InviteDialogFragment"
+        android:label="Create Invite"
+        tools:layout="@layout/dialog_invite">
+        <!--        <argument-->
+        <!--            android:name="taskId"-->
+        <!--            app:argType="string" />-->
+    </dialog>
+
+    <dialog
+        android:id="@+id/acceptInviteDialogFragment"
+        android:name="com.homeostasis.app.ui.groups.AcceptInviteDialogFragment"
+        android:label="Accept Invite"
+        tools:layout="@layout/dialog_accept_invite">
+        <!--        <argument-->
+        <!--            android:name="taskId"-->
+        <!--            app:argType="string" />-->
+        <action
+            android:id="@+id/action_acceptInviteDialogFragment_to_navigation_tasks"
+            app:destination="@id/navigation_tasks" />
+    </dialog>
+
+<!--    <navigation xmlns:android="http://schemas.android.com/apk/res/android"-->
+<!--        xmlns:app="http://schemas.android.com/apk/res-auto"-->
+<!--        xmlns:tools="http://schemas.android.com/tools"-->
+<!--        android:id="@+id/nav_graph"-->
+<!--        app:startDestination="@id/navigation_tasks">-->
+
+
+
+
+
+<!--        &lt;!&ndash; Other destinations &ndash;&gt;-->
+
+<!--    </navigation>-->
+    <dialog
+        android:id="@+id/onboardingDialogFragment"
+        android:name="com.homeostasis.app.ui.groups.OnboardingDialogFragment"
+        android:label="Onboarding" >
+
+
+        <action
+            android:id="@+id/action_onboardingDialogFragment_to_acceptInviteDialogFragment"
+            app:destination="@id/acceptInviteDialogFragment" />
+        <action
+            android:id="@+id/action_onboardingDialogFragment_to_createGroupDialogFragment"
+            app:destination="@id/createGroupDialogFragment" />
+    </dialog>
 
     <!-- Tasks -->
     <fragment
@@ -93,11 +159,11 @@
         tools:layout="@layout/fragment_profile_settings" />
 
         <!-- Household Group -->
-        <fragment
-            android:id="@+id/navigation_household_group"
-            android:name="com.homeostasis.app.ui.settings.GroupAdminFragment"
-            android:label="@string/title_default_group"
-            tools:layout="@layout/fragment_setting_group_admin" />
+<!--        <fragment-->
+<!--            android:id="@+id/navigation_household_group"-->
+<!--            android:name="com.homeostasis.app.ui.settings.GroupAdminFragment"-->
+<!--            android:label="@string/title_default_group"-->
+<!--            tools:layout="@layout/fragment_setting_group_admin" />-->
     
         <!-- Settings -->
         <fragment
@@ -105,9 +171,20 @@
             android:name="com.homeostasis.app.ui.settings.SettingsFragment"
 
             tools:layout="@layout/fragment_settings" >
+
+
             <action
-                android:id="@+id/action_navigation_settings_to_navigation_household_group"
-                app:destination="@id/navigation_household_group" />
+                android:id="@+id/action_navigation_settings_to_acceptInviteDialogFragment"
+                app:destination="@id/acceptInviteDialogFragment" />
+            <action
+                android:id="@+id/action_navigation_settings_to_createGroupDialogFragment"
+                app:destination="@id/createGroupDialogFragment" />
+            <action
+                android:id="@+id/action_navigation_settings_to_createInviteDialogFragment"
+                app:destination="@id/createInviteDialogFragment" />
+            <action
+                android:id="@+id/action_navigation_settings_to_navigation_profile"
+                app:destination="@id/navigation_profile" />
         </fragment>
 
 <!--    <!&ndash; Categories &ndash;>-->

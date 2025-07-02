@@ -1,4 +1,4 @@
-package com.homeostasis.app.data
+package com.homeostasis.app.data.local
 
 import androidx.room.*
 import com.homeostasis.app.data.model.Task

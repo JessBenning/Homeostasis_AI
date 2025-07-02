@@ -9,11 +9,15 @@ import android.content.Context
 import android.util.Log
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.homeostasis.app.data.local.GroupDao
+import com.homeostasis.app.data.local.TaskDao
+import com.homeostasis.app.data.local.TaskHistoryDao
+import com.homeostasis.app.data.local.UserDao
 
 
 @Database(
     entities = [Task::class, com.homeostasis.app.data.model.User::class, com.homeostasis.app.data.model.TaskHistory::class, com.homeostasis.app.data.model.Group::class], // Removed HouseholdGroup and Invitation entities
-    version = 14, // Database version
+    version = 18, // Database version
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -43,15 +47,17 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_10_11,
                     MIGRATION_11_12,
                     MIGRATION_12_13,
-                    MIGRATION_13_14
+                    MIGRATION_13_14,
+                    MIGRATION_14_15,
+                    MIGRATION_15_16,
+                    MIGRATION_16_17,
+                    MIGRATION_17_18
                 )
-                // Remove fallbackToDestructiveMigrationFrom(13) as we are providing a migration for 13->14
-                .build()
+                    .build()
                 INSTANCE = instance
                 instance
             }
         }
-
 
 
         val MIGRATION_4_5 = object : androidx.room.migration.Migration(4, 5) {
@@ -92,15 +98,17 @@ abstract class AppDatabase : RoomDatabase() {
                 // Add householdGroupId to user table as NOT NULL with a default value
                 database.execSQL("ALTER TABLE user ADD COLUMN householdGroupId TEXT NOT NULL DEFAULT ''")
                 database.execSQL("ALTER TABLE task_history ADD COLUMN householdGroupId TEXT NOT NULL DEFAULT ''")
-                database.execSQL("""
+                database.execSQL(
+                    """
                     CREATE TABLE IF NOT EXISTS `household_groups` (
                         `id` TEXT NOT NULL,
                         `name` TEXT NOT NULL,
                         `createdAt` INTEGER NOT NULL,
                         PRIMARY KEY(`id`)
                     )
-                """.trimIndent())
-    
+                """.trimIndent()
+                )
+
             }
 
         }
@@ -138,7 +146,8 @@ abstract class AppDatabase : RoomDatabase() {
                 // 1. Create the new table with the expected schema
                 // Note: isDeleted, isCompleted, needsSync, isDeletedLocally are INTEGER NOT NULL
                 // createdAt and lastModifiedAt are INTEGER NULL (for nullable Timestamps)
-                db.execSQL("""
+                db.execSQL(
+                    """
             CREATE TABLE tasks_new (
                 id TEXT PRIMARY KEY NOT NULL,
                 title TEXT NOT NULL,
@@ -154,15 +163,18 @@ abstract class AppDatabase : RoomDatabase() {
                 isCompleted INTEGER NOT NULL DEFAULT 0,
                 householdGroupId TEXT NOT NULL DEFAULT '' 
             )
-        """.trimIndent())
+        """.trimIndent()
+                )
 
                 // 2. Copy data from the old table to the new table
                 // Ensure all columns from the old 'tasks' table are selected.
                 // The old table had not-null createdAt and lastModifiedAt, so they will have values.
-                db.execSQL("""
+                db.execSQL(
+                    """
             INSERT INTO tasks_new (id, title, description, points, categoryId, createdBy, isDeleted, createdAt, lastModifiedAt, needsSync, isDeletedLocally, isCompleted, householdGroupId)
             SELECT id, title, description, points, categoryId, createdBy, isDeleted, createdAt, lastModifiedAt, needsSync, isDeletedLocally, isCompleted, householdGroupId FROM tasks
-        """.trimIndent())
+        """.trimIndent()
+                )
 
                 // 3. Drop the old tasks table
                 db.execSQL("DROP TABLE tasks")
@@ -179,7 +191,8 @@ abstract class AppDatabase : RoomDatabase() {
         val MIGRATION_13_14: Migration = object : Migration(13, 14) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 // Create the new 'groups' table
-                db.execSQL("""
+                db.execSQL(
+                    """
                     CREATE TABLE IF NOT EXISTS `groups` (
                         `id` TEXT NOT NULL,
                         `name` TEXT NOT NULL,
@@ -189,12 +202,14 @@ abstract class AppDatabase : RoomDatabase() {
                         `needsSync` INTEGER NOT NULL DEFAULT 0,
                         PRIMARY KEY(`id`)
                     )
-                """.trimIndent())
+                """.trimIndent()
+                )
 
                 // --- Migrate 'tasks' table: Remove 'createdBy', Add 'ownerId' ---
                 // 1. Create the new tasks table with the desired schema (including ownerId, excluding createdBy)
                 // Ensure all other existing columns are included.
-                db.execSQL("""
+                db.execSQL(
+                    """
                     CREATE TABLE tasks_new (
                         id TEXT PRIMARY KEY NOT NULL,
                         title TEXT NOT NULL,
@@ -210,16 +225,19 @@ abstract class AppDatabase : RoomDatabase() {
                         isCompleted INTEGER NOT NULL DEFAULT 0,
                         householdGroupId TEXT NOT NULL DEFAULT ''
                     )
-                """.trimIndent())
+                """.trimIndent()
+                )
 
                 // 2. Copy data from the old tasks table to the new tasks_new table
                 // Select all columns from the old table *except* createdBy.
                 // Provide a default value for the new ownerId column during the copy.
-                db.execSQL("""
+                db.execSQL(
+                    """
                     INSERT INTO tasks_new (id, title, description, points, categoryId, isDeleted, createdAt, lastModifiedAt, needsSync, isDeletedLocally, isCompleted, householdGroupId, ownerId)
                     SELECT id, title, description, points, categoryId, isDeleted, createdAt, lastModifiedAt, needsSync, isDeletedLocally, isCompleted, householdGroupId, '' -- Provide a default value for ownerId
                     FROM tasks
-                """.trimIndent())
+                """.trimIndent()
+                )
 
                 // 3. Drop the old tasks table
                 db.execSQL("DROP TABLE tasks")
@@ -228,6 +246,76 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE tasks_new RENAME TO tasks")
 
                 Log.d("Migration", "Successfully migrated tasks table for version 14.")
+            }
+        }
+        val MIGRATION_14_15: Migration = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // SQL command to add the new 'profileImageHashSignature' column to the 'users' table.
+                // It's a TEXT column because the hash is a String.
+                // It can be NULL because a user might not have a profile picture.
+                db.execSQL("ALTER TABLE user ADD COLUMN profileImageHashSignature TEXT")
+            }
+        }
+
+        val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i("RoomMigration", "Migrating schema from 15 to 16: Adding profileImageHashSignature to user table.")
+                // Add the new column 'profileImageHashSignature'.
+                // It's a nullable TEXT column (String?).
+               // db.execSQL("ALTER TABLE user ADD COLUMN profileImageHashSignature TEXT")
+
+            }
+        }
+        val MIGRATION_16_17: Migration = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Step 1: Create the new temporary table "user_new"
+                db.execSQL("""
+            CREATE TABLE user_new (
+                id TEXT NOT NULL PRIMARY KEY,
+                name TEXT NOT NULL,
+                profileImageUrl TEXT NOT NULL,
+                createdAt INTEGER NOT NULL,
+                lastActive INTEGER NOT NULL,
+                lastResetScore INTEGER NOT NULL,
+                resetCount INTEGER NOT NULL,
+                householdGroupId TEXT NOT NULL,
+                lastModifiedAt INTEGER,        
+                profileImageHashSignature TEXT,
+                needsSync INTEGER NOT NULL DEFAULT 0, 
+                isDeletedLocally INTEGER NOT NULL DEFAULT 0 
+            )
+        """.trimIndent())
+
+                // Step 2: Copy data and provide defaults for new columns
+                db.execSQL("""
+            INSERT INTO user_new (
+                id, name, profileImageUrl, createdAt, lastActive,
+                lastResetScore, resetCount, householdGroupId,
+                lastModifiedAt, profileImageHashSignature,
+                needsSync, isDeletedLocally
+            )
+            SELECT
+                id, name, profileImageUrl, createdAt, lastActive,
+                lastResetScore, resetCount, householdGroupId,
+                lastModifiedAt, profileImageHashSignature,
+                0, 
+                0  
+            FROM user
+        """.trimIndent())
+
+                // Step 3: Drop the old "user" table
+                db.execSQL("DROP TABLE user")
+
+                // Step 4: Rename "user_new" to "user"
+                db.execSQL("ALTER TABLE user_new RENAME TO user")
+            }
+        }
+
+        val MIGRATION_17_18: Migration = object : Migration(17, 18) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "ALTER TABLE user ADD COLUMN needsProfileImageUpload INTEGER NOT NULL DEFAULT 0"
+                )
             }
         }
 

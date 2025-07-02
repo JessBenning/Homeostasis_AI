@@ -5,11 +5,9 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.TextView
-//import androidx.compose.ui.semantics.error
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter // Import ListAdapter
 import androidx.recyclerview.widget.RecyclerView
-//import androidx.wear.compose.material.placeholder
 import com.bumptech.glide.Glide // Assuming you'll use Glide for image loading
 import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.bumptech.glide.signature.ObjectKey
@@ -17,6 +15,8 @@ import com.homeostasis.app.R
 import com.homeostasis.app.ui.task_history.TaskHistoryFeedItem.TaskHistoryItem
 import com.homeostasis.app.ui.task_history.TaskHistoryFeedItem.UserScoreSummaryItem
 import com.homeostasis.app.data.Converters
+import java.io.File
+
 // Remove unused imports like AppDatabase, Task, coroutine related ones if not directly used here for now
 
 // Define your TaskHistoryFeedItem sealed class (if not already in a separate file)
@@ -47,34 +47,54 @@ class TaskHistoryAdapter :
     ListAdapter<TaskHistoryFeedItem, RecyclerView.ViewHolder>(TaskHistoryFeedItemDiffCallback()) {
 
     class UserScoreSummaryViewHolder(view: View) : RecyclerView.ViewHolder(view) {
+
         private val userProfilePicture: ImageView = view.findViewById(R.id.user_profile_picture)
-        private val userName: TextView = view.findViewById(R.id.user_name)
-        private val userScore: TextView = view.findViewById(R.id.user_score)
+            private val userName: TextView = view.findViewById(R.id.user_name)
+            private val userScore: TextView = view.findViewById(R.id.user_score)
 
-        fun bind(item: UserScoreSummaryItem) {
-            userName.text = item.userName
-            userScore.text = itemView.context.getString(R.string.profile_current_score, item.totalScore)
+            fun bind(item: UserScoreSummaryItem) {
+                userName.text = item.userName
+                userScore.text = itemView.context.getString(R.string.profile_current_score, item.totalScore)
 
-            // Ensure userProfilePicLocalPath and userProfilePicSignature are present in your UserScoreSummaryItem data class
-            item.userProfilePicLocalPath?.let { path ->
-                Glide.with(itemView.context)
-                    .load(path) // Load from the local file path
-                    .signature(ObjectKey(item.userProfilePicSignature ?: System.currentTimeMillis().toString())) // Add signature
-                    .diskCacheStrategy(DiskCacheStrategy.NONE) // Do not cache to disk based on path alone
-                    .skipMemoryCache(true) // Do not cache in memory based on path alone
-                    .placeholder(R.drawable.ic_default_profile)
-                    .error(R.drawable.ic_profile_load_error)
-                    .circleCrop()
-                    .into(userProfilePicture)
-            } ?: run {
-                // Fallback if local path is null
-                Glide.with(itemView.context)
-                    .load(R.drawable.ic_default_profile)
-                    .circleCrop()
-                    .into(userProfilePicture)
+                // Assuming item.userProfilePicSignature is now the file hash or a reliable unique key.
+                // And item.userProfilePicLocalPath is the path to the local image file.
+
+                item.userProfilePicLocalPath?.let { path ->
+                    val imageFile = File(path)
+                    if (imageFile.exists()) {
+                        Glide.with(itemView.context)
+                            .load(imageFile) // Load the File object directly
+                            .signature(ObjectKey(item.userProfilePicSignature ?: System.currentTimeMillis().toString())) // Use hash as signature; fallback to time)
+                            .diskCacheStrategy(DiskCacheStrategy.DATA) // Cache the decoded image data. DATA is good when transformations (like circleCrop) are applied.
+                            // Or DiskCacheStrategy.RESOURCE if you want to cache the transformed resource.
+                            // Or DiskCacheStrategy.AUTOMATIC.
+                            .skipMemoryCache(false) // Allow Glide to use its memory cache.
+                            .placeholder(R.drawable.ic_default_profile)
+                            .error(R.drawable.ic_profile_load_error) // Shown if file exists but Glide fails to load/decode
+                            .circleCrop() // Apply transformation
+                            .into(userProfilePicture)
+                    } else {
+                        // The path was provided, but the file doesn't exist locally.
+                        // This could happen if the local cache was cleared or the file was manually deleted.
+                        Glide.with(itemView.context)
+                            .load(R.drawable.ic_profile_load_error) // Show an error or specific "file missing" placeholder
+                            .circleCrop()
+                            .into(userProfilePicture)
+                        // Optionally, log this situation:
+                        // Log.w("UserScoreSummaryVH", "Profile picture file missing at path: $path for user ${item.userName}")
+                    }
+                } ?: run {
+                    // Fallback if userProfilePicLocalPath is null (meaning no profile picture is set for the user)
+                    Glide.with(itemView.context)
+                        .load(R.drawable.ic_default_profile) // Load default placeholder
+                        .circleCrop()
+                        .into(userProfilePicture)
+                }
             }
         }
-    }
+
+
+
 
     class TaskHistoryLogViewHolder(view: View) : RecyclerView.ViewHolder(view) {
         private val taskName: TextView = view.findViewById(R.id.log_item_task_name)

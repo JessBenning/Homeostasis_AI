@@ -1,12 +1,12 @@
 package com.homeostasis.app.ui.tasks
 
-import com.homeostasis.app.data.Constants
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.Timestamp
-import com.homeostasis.app.data.TaskDao
-import com.homeostasis.app.data.TaskHistoryDao
+import com.homeostasis.app.data.local.TaskDao
+import com.homeostasis.app.data.local.TaskHistoryDao
+import com.homeostasis.app.data.local.UserDao
 import com.homeostasis.app.data.model.Task
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,7 +33,7 @@ class TaskListViewModel @Inject constructor(
     private val taskHistoryDao: TaskHistoryDao,
     private val taskDao: TaskDao,
     private val groupRepository: com.homeostasis.app.data.remote.GroupRepository, // Inject GroupRepository
-    private val userDao: com.homeostasis.app.data.UserDao // Inject UserDao
+    private val userDao: UserDao // Inject UserDao
 ) : ViewModel() {
 
     private val _tasks = MutableStateFlow<List<Task>>(emptyList())
@@ -105,7 +105,7 @@ class TaskListViewModel @Inject constructor(
                                     var lastCompletedByName: String? = null // Default to null, then "N/A" if still null after check
                                     if (latestHistory?.userId != null) {
                                         // Fetch user for history entry within the current household group
-                                        val user = userRepository.getUser(latestHistory.userId) // getUser now handles householdGroupId internally
+                                        val user = userDao.getUserById(latestHistory.userId) // getUser now handles householdGroupId internally
                                         lastCompletedByName = user?.name ?: "Unknown User"
                                     } else {
                                         lastCompletedByName = "N/A"

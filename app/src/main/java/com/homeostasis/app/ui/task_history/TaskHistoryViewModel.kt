@@ -2,11 +2,14 @@ package com.homeostasis.app.ui.task_history
 
 import com.homeostasis.app.data.Constants
 import android.util.Log // For logging
+
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.homeostasis.app.data.TaskDao
-import com.homeostasis.app.data.TaskHistoryDao
-import com.homeostasis.app.data.UserDao
+
+
+import com.homeostasis.app.data.local.TaskDao
+import com.homeostasis.app.data.local.TaskHistoryDao
+import com.homeostasis.app.data.local.UserDao
 import com.homeostasis.app.data.model.TaskHistory
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
@@ -20,6 +23,7 @@ import java.io.File
 import kotlinx.coroutines.channels.Channel // Import Channel
 import kotlinx.coroutines.flow.receiveAsFlow // Import receiveAsFlow
 import com.homeostasis.app.data.model.Group // Import Group
+import com.homeostasis.app.data.sync.FirebaseSyncManager
 
 @HiltViewModel
 class TaskHistoryViewModel @Inject constructor(
@@ -29,7 +33,7 @@ class TaskHistoryViewModel @Inject constructor(
     private val userRepository: com.homeostasis.app.data.remote.UserRepository, // Inject UserRepository
     @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context, // Inject ApplicationContext
     private val groupRepository: com.homeostasis.app.data.remote.GroupRepository, // Inject GroupRepository
-    private val firebaseSyncManager: com.homeostasis.app.data.FirebaseSyncManager // Inject FirebaseSyncManager
+    private val firebaseSyncManager: FirebaseSyncManager // Inject FirebaseSyncManager
     // ... any other dependencies
 ) : ViewModel() {
 
@@ -95,7 +99,7 @@ class TaskHistoryViewModel @Inject constructor(
                         if (usersList.isNotEmpty()) {
                             Log.d("TaskHistoryVM_Combine", "--- User Details from usersList ---")
                             usersList.forEach { u -> // Renamed to avoid conflict with outer 'user'
-                                Log.d("TaskHistoryVM_Combine", "User ID: ${u.id}, Name: ${u.name}, lastModifiedAt: ${u.lastModifiedAt.toDate()} (seconds: ${u.lastModifiedAt.seconds})")
+                                Log.d("TaskHistoryVM_Combine", "User ID: ${u.id}, Name: ${u.name}, lastModifiedAt: ${u.lastModifiedAt?.toDate()} (seconds: ${u.lastModifiedAt?.seconds})")
                             }
                             Log.d("TaskHistoryVM_Combine", "--- End User Details ---")
                         }
@@ -111,7 +115,7 @@ class TaskHistoryViewModel @Inject constructor(
 
                             val taskHistoryItemUserSignature = completedByUser?.lastModifiedAt?.seconds?.toString() ?: defaultUserSignature
                             if (completedByUser != null) {
-                                Log.d("TaskHistoryVM_FeedPrep", "TaskHistoryItem: User ID ${completedByUser.id}, Name: ${completedByUser.name}, PicSignature for item: $taskHistoryItemUserSignature (from user lastModifiedAt: ${completedByUser.lastModifiedAt.toDate()})")
+                                Log.d("TaskHistoryVM_FeedPrep", "TaskHistoryItem: User ID ${completedByUser.id}, Name: ${completedByUser.name}, PicSignature for item: $taskHistoryItemUserSignature (from user lastModifiedAt: ${completedByUser.lastModifiedAt?.toDate()})")
                             }
 
                             TaskHistoryFeedItem.TaskHistoryItem(
@@ -121,8 +125,8 @@ class TaskHistoryViewModel @Inject constructor(
                                 completedByUserId = history.userId,
                                 completedByUserName = completedByUser?.name ?: "Unknown User",
                                 completedAt = history.completedAt,
-                                completedByUserProfilePicLocalPath = completedByUser?.let {
-                                    File(context.filesDir, "profile_picture_${it.id}.jpg").absolutePath
+                                completedByUserProfilePicLocalPath = completedByUser?.let { user ->
+                                    Constants.getProfileImageFile(context, user.id).absolutePath // Use user.id or history.userId
                                 },
                                 completedByUserProfilePicSignature = taskHistoryItemUserSignature
                             )
@@ -175,7 +179,7 @@ class TaskHistoryViewModel @Inject constructor(
         if (usersListForLogging.isNotEmpty()) {
             Log.d("TaskHistoryVM_Scores", "--- User Details for Score Calculation (from usersListForLogging) ---")
             usersListForLogging.forEach { u ->
-                Log.d("TaskHistoryVM_Scores", "User ID: ${u.id}, Name: ${u.name}, lastModifiedAt: ${u.lastModifiedAt.toDate()} (seconds: ${u.lastModifiedAt.seconds})")
+                Log.d("TaskHistoryVM_Scores", "User ID: ${u.id}, Name: ${u.name}, lastModifiedAt: ${u.lastModifiedAt?.toDate()} (seconds: ${u.lastModifiedAt?.seconds})")
             }
             Log.d("TaskHistoryVM_Scores", "--- End User Details ---")
         }
@@ -199,7 +203,7 @@ class TaskHistoryViewModel @Inject constructor(
             // --- START: New Logging for UserScoreSummaryItem signature ---
             val userScorePicSignature = user?.lastModifiedAt?.seconds?.toString() ?: defaultUserSignature
             if (user != null) {
-                Log.d("TaskHistoryVM_FeedPrep", "UserScoreSummaryItem: User ID ${user.id}, Name: ${user.name}, PicSignature for item: $userScorePicSignature (from user lastModifiedAt: ${user.lastModifiedAt.toDate()})")
+                Log.d("TaskHistoryVM_FeedPrep", "UserScoreSummaryItem: User ID ${user.id}, Name: ${user.name}, PicSignature for item: $userScorePicSignature (from user lastModifiedAt: ${user.lastModifiedAt?.toDate()})")
             } else {
                 Log.w("TaskHistoryVM_FeedPrep", "UserScoreSummaryItem: User not found in usersMap for ID $userId. Using default signature.")
             }
@@ -209,8 +213,8 @@ class TaskHistoryViewModel @Inject constructor(
                 TaskHistoryFeedItem.UserScoreSummaryItem(
                     userId = userId,
                     userName = user?.name ?: "User $userId",
-                    userProfilePicLocalPath = user?.let {
-                        File(context.filesDir, "profile_picture_${it.id}.jpg").absolutePath
+                    userProfilePicLocalPath = user?.let { user ->
+                        Constants.getProfileImageFile(context, user.id).absolutePath
                     },
                     totalScore = points,
                     userProfilePicSignature = userScorePicSignature // Use the logged variable
@@ -241,35 +245,60 @@ class TaskHistoryViewModel @Inject constructor(
         return groupRepository.getGroupById(groupId).first()
     }
 
+
+
+
     fun resetScoresAndHistory() {
         viewModelScope.launch {
+            _isLoading.value = true // Indicate loading state
+            _error.value = null
             try {
                 val currentUserId = userRepository.getCurrentUserId()
                 val householdGroupId = if (currentUserId != null) {
-                    userDao.getUserByIdWithoutHouseholdIdFlow(currentUserId).first()?.householdGroupId?.takeIf { it.isNotEmpty() } ?: com.homeostasis.app.data.Constants.DEFAULT_GROUP_ID
+                    userDao.getUserByIdWithoutHouseholdIdFlow(currentUserId).first()?.householdGroupId?.takeIf { it.isNotEmpty() }
+                        ?: Constants.DEFAULT_GROUP_ID
                 } else {
-                    com.homeostasis.app.data.Constants.DEFAULT_GROUP_ID
+                    Constants.DEFAULT_GROUP_ID
                 }
 
-                if (householdGroupId != null && householdGroupId.isNotEmpty()) {
-                    // Delete locally first
-                    taskHistoryDao.deleteAllTaskHistory(householdGroupId) // Use DAO directly for local deletion
-                    Log.d("TaskHistoryVM", "Local task history deleted for group: $householdGroupId")
+                if (householdGroupId != Constants.DEFAULT_GROUP_ID && householdGroupId.isNotEmpty()) {
+                    Log.d("TaskHistoryVM", "Starting reset of scores and history for group: $householdGroupId")
 
-                    // Then trigger remote sync for deleted history
-                    firebaseSyncManager.syncDeletedTaskHistoryRemote()
-                    Log.d("TaskHistoryVM", "Remote sync for deleted task history triggered.")
+                    // Step 1: Get all task history items for the group from local DAO
+                    // Collect the first list emitted by the Flow.
+                    val historyItemsToMark: List<com.homeostasis.app.data.model.TaskHistory> = taskHistoryDao.getAllTaskHistoryFlow(householdGroupId).first() // Use .first() to get the list
 
-                    // Signal success to the Fragment
+                    if (historyItemsToMark.isNotEmpty()) { // Now isNotEmpty() will work on the List
+                        val itemsToUpdate = historyItemsToMark.map { historyItem ->
+                            historyItem.copy(
+                                isDeletedLocally = true, // Mark for local deletion
+                                needsSync = true,        // Mark for remote sync
+                                lastModifiedAt = com.google.firebase.Timestamp.now() // Update modification timestamp
+                            )
+                        }
+                        taskHistoryDao.upsertTaskHistories(itemsToUpdate)
+                        Log.d("TaskHistoryVM", "${itemsToUpdate.size} local task history items marked for deletion and sync for group: $householdGroupId")
+                    } else {
+                        Log.d("TaskHistoryVM", "No local task history found for group: $householdGroupId to mark for deletion.")
+                    }
+
+                    loadCombinedFeed()
+
                     _resetScoresEvent.send(Unit)
+                    Log.d("TaskHistoryVM", "Reset scores and history process initiated for group: $householdGroupId. Local items marked.")
+
                 } else {
-                    Log.w("TaskHistoryVM", "Cannot reset scores and history, householdGroupId is null or empty.")
-                    // TODO: Handle case where householdGroupId is null or empty (e.g., show a message)
+                    Log.w("TaskHistoryVM", "Cannot reset scores and history, householdGroupId is null, empty, or default.")
+                    _error.value = "Cannot reset history: No active group."
                 }
             } catch (e: Exception) {
                 Log.e("TaskHistoryVM", "Error resetting scores and history", e)
-                // TODO: Handle error (e.g., show an error message to the user)
+                _error.value = "Error resetting history: ${e.message}"
+            } finally {
+                _isLoading.value = false
             }
         }
     }
+
+
 }

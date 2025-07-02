@@ -3,14 +3,14 @@ package com.homeostasis.app.di
 
 import android.content.Context
 import androidx.room.Room
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.homeostasis.app.data.AppDatabase
-import com.homeostasis.app.data.AppDatabase.Companion.MIGRATION_11_12
 
-import com.homeostasis.app.data.TaskDao
-import com.homeostasis.app.data.TaskHistoryDao
-import com.homeostasis.app.data.UserDao
-import com.homeostasis.app.data.GroupDao
+import com.homeostasis.app.data.local.TaskDao
+import com.homeostasis.app.data.local.TaskHistoryDao
+import com.homeostasis.app.data.local.UserDao
+import com.homeostasis.app.data.local.GroupDao
 import com.homeostasis.app.data.remote.*
 import dagger.Module
 import dagger.Provides
@@ -30,10 +30,11 @@ object FirebaseModule {
     @Singleton
     fun provideUserRepository(
         firebaseStorageRepository: FirebaseStorageRepository, // Inject FirebaseStorageRepository
-        userDao: UserDao // Inject UserDao
+        userDao: UserDao, // Inject UserDao
+        auth: FirebaseAuth
         // Removed HouseholdGroupIdProvider injection
     ): UserRepository {
-        return UserRepository(firebaseStorageRepository, userDao) // Removed HouseholdGroupIdProvider from constructor
+        return UserRepository(auth) // Removed HouseholdGroupIdProvider from constructor
     }
 
 
@@ -86,7 +87,11 @@ object FirebaseModule {
                 AppDatabase.MIGRATION_10_11,
                 AppDatabase.MIGRATION_11_12,
                 AppDatabase.MIGRATION_12_13,
-                AppDatabase.MIGRATION_13_14
+                AppDatabase.MIGRATION_13_14,
+                AppDatabase.MIGRATION_14_15,
+                AppDatabase.MIGRATION_15_16,
+                AppDatabase.MIGRATION_16_17,
+                AppDatabase.MIGRATION_17_18
             )
             .build()
     }
@@ -163,6 +168,12 @@ object FirebaseModule {
     @Singleton // If AppDatabase is Singleton
     fun provideUserDao(appDatabase: AppDatabase): UserDao {
         return appDatabase.userDao()
+    }
+
+    @Provides
+    @Singleton // Or appropriate scope
+    fun provideFirebaseAuth(): FirebaseAuth {
+        return FirebaseAuth.getInstance()
     }
 
 }

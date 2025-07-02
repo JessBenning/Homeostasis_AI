@@ -6,11 +6,20 @@
     android:orientation="vertical"
     android:padding="16dp">
 
+    <TextView
+        android:id="@+id/dialog_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="16dp"
+        android:gravity="center"
+        android:text="@string/settings_accept_invite_title"
+        android:textAppearance="?attr/textAppearanceHeadline6" />
+
     <com.google.android.material.textfield.TextInputLayout
         android:id="@+id/invite_link_input_layout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="Paste invite link here"
+        android:hint="@string/settings_accept_invite_hint"
         app:boxBackgroundMode="outline">
 
         <com.google.android.material.textfield.TextInputEditText
@@ -28,5 +37,27 @@
         android:layout_marginTop="8dp"
         android:textColor="@android:color/holo_red_dark"
         android:visibility="gone" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="end"
+        android:layout_marginTop="16dp">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/settings_accept_invite_dismiss_button"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/cancel"/>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/settings_accept_invite_button"
+            style="@style/Widget.MaterialComponents.Button"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/settings_accept_invite_button"/>
+    </LinearLayout>
 
 </LinearLayout>

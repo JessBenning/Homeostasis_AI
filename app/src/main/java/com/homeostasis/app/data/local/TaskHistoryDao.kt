@@ -1,6 +1,5 @@
-package com.homeostasis.app.data
+package com.homeostasis.app.data.local
 
-import androidx.annotation.Nullable
 import androidx.room.Dao
 import androidx.room.Delete
 import androidx.room.Insert
@@ -10,7 +9,6 @@ import androidx.room.Update
 import androidx.room.Upsert
 import com.homeostasis.app.data.model.TaskHistory
 import kotlinx.coroutines.flow.Flow
-import org.jetbrains.annotations.NotNull
 
 
 @Dao
@@ -70,5 +68,15 @@ interface TaskHistoryDao {
 
     @Query("SELECT * FROM task_history WHERE householdGroupId = :householdGroupId ORDER BY completedAt DESC" ) // Or your actual table name
     fun getAllTaskHistoryFlow(householdGroupId: String): Flow<List<TaskHistory>>
+
+    @Upsert
+    suspend fun upsertTaskHistories(taskHistories: List<TaskHistory>)
+
+    // You'll also need this method, as mentioned in the previous response:
+    @Query("SELECT * FROM task_history WHERE householdGroupId = :householdGroupId AND isDeletedLocally = 0")
+    suspend fun getAllTaskHistoryForGroupSnapshot(householdGroupId: String): List<TaskHistory>
+
+    @Query("DELETE FROM task_history WHERE id = :taskHistoryId")
+    suspend fun deleteTaskHistoryById(taskHistoryId: String)
 
 }

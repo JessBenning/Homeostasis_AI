@@ -35,6 +35,8 @@ import java.util.Date
 import javax.inject.Inject
 
 import androidx.navigation.fragment.findNavController
+import com.homeostasis.app.data.Constants
+
 /**
  * Fragment for displaying the list of tasks.
  * Manages UI interactions and observes DisplayTask objects from the ViewModel.
@@ -81,19 +83,57 @@ class TaskListFragment : Fragment(), AddModTaskDialogFragment.AddModTaskListener
             showAddTaskDialog()
         }
 
-        // Update the fragment title with the group name
-        lifecycleScope.launch {
-            val householdGroupId = viewModel.getCurrentHouseholdGroupId()
-            val title = if (householdGroupId != null && householdGroupId.isNotEmpty()) {
-                val group = viewModel.getGroupById(householdGroupId)
-                "${group?.name ?: getString(R.string.title_default_group)} Tasks"
+
+        updateActivityTitle()
+    }
+
+    fun refreshActivityTitleWithGroup() {
+        if (!isAdded) return // Don't do anything if fragment is not attached
+
+        // Use the existing logic from your onViewCreated or a dedicated one
+        // This assumes your TaskListViewModel can provide the necessary info
+        viewLifecycleOwner.lifecycleScope.launch { // Use viewLifecycleOwner's scope
+            // It's possible TaskListViewModel itself might need to observe group changes
+            // if the group can change *while* the user is on this screen.
+            // For now, let's assume it gets the latest available info.
+
+            val householdGroupId = viewModel.getCurrentHouseholdGroupId() // From TaskListViewModel
+            val groupName = if (householdGroupId != null &&
+                householdGroupId.isNotEmpty() &&
+                householdGroupId != Constants.DEFAULT_GROUP_ID) {
+                viewModel.getGroupById(householdGroupId)?.name // From TaskListViewModel
             } else {
-                getString(R.string.title_tasks) // Default title if not in a group
+                null
+            }
+
+            val title = if (!groupName.isNullOrEmpty()) {
+                "$groupName Tasks"
+            } else {
+                getString(R.string.title_tasks) // Fallback to generic "Tasks"
             }
             activity?.title = title
+            Log.d(TAG, "Activity title refreshed to: $title")
         }
+    }
 
+    // Helper or existing method to set the title
+    private fun updateActivityTitle() {
+        if (!isAdded) return
+        viewLifecycleOwner.lifecycleScope.launch {
+            val currentTitle = activity?.title?.toString()
+            // Only fetch and set if it's not already the group-specific title,
+            // or if we want to ensure it's "Tasks" initially.
+            // For initial "Tasks" and then update:
 
+            // Initial state: "Tasks"
+            if (/* condition to know group is not yet loaded or is default */ true) {
+                // Forcing "Tasks" first, then letting refreshActivityTitleWithGroup update it
+                // This logic needs to be careful not to fight with refreshActivityTitleWithGroup
+            }
+
+            // More simply, just call the full refresh logic:
+            refreshActivityTitleWithGroup()
+        }
     }
 
     // Important: Remove the listener when the view is destroyed to prevent memory leaks

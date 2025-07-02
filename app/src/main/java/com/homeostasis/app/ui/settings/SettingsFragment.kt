@@ -13,11 +13,15 @@ import dagger.hilt.android.AndroidEntryPoint
 import com.homeostasis.app.R
 import androidx.fragment.app.viewModels
 import android.app.AlertDialog
+import android.util.Log
 import com.google.android.material.snackbar.Snackbar
 import com.homeostasis.app.ui.task_history.TaskHistoryViewModel // Import TaskHistoryViewModel
 import androidx.lifecycle.lifecycleScope
+import com.homeostasis.app.ui.groups.AcceptInviteDialogFragment
 import com.homeostasis.app.ui.groups.CreateGroupDialogFragment
 import kotlinx.coroutines.launch
+import com.homeostasis.app.ui.auth.AuthViewModel
+import com.homeostasis.app.ui.groups.OnboardingDialogFragment.Companion.TAG
 
 
 @AndroidEntryPoint
@@ -25,6 +29,7 @@ class SettingsFragment : Fragment() {
 
     private val profileSettingsViewModel: ProfileSettingsViewModel by viewModels() // Inject ProfileSettingsViewModel
     private val taskHistoryViewModel: TaskHistoryViewModel by viewModels() // Inject TaskHistoryViewModel
+    private val authViewModel: AuthViewModel by viewModels()
 
     private var _binding: FragmentSettingsBinding? = null
     private val binding get() = _binding!!
@@ -52,6 +57,7 @@ class SettingsFragment : Fragment() {
         
                 val settingsOptions = listOf(
                     SettingsListItem.Setting("Profile"),
+                    SettingsListItem.Setting("Sign Out"),
                     SettingsListItem.Setting("Reset Scores and History"), // Keep Reset Scores option
                     SettingsListItem.Header("Group Settings"), // Group Settings Header
                     SettingsListItem.Setting("Create New Group"),
@@ -72,12 +78,24 @@ class SettingsFragment : Fragment() {
 
                             findNavController().navigate(R.id.navigation_profile)
                         }
+
+                        "Sign Out" -> {
+                            authViewModel.signOut()
+                            try {
+                                 findNavController().navigate(R.id.navigation_auth)
+                            } catch (e: IllegalStateException) {
+                                Log.e(TAG, "Error navigating to auth screen on logout: ${e.message}", e)
+                            }
+                        }
+
                         "Create New Group" -> {
-                            CreateGroupDialogFragment().show(childFragmentManager, CreateGroupDialogFragment.TAG)
+
+                            findNavController().navigate(R.id.createGroupDialogFragment)
                         }
                         "Invite Members" -> {
                             // Assuming R.id.navigation_household_group is the correct destination for inviting members
-                            findNavController().navigate(R.id.navigation_household_group)
+                            findNavController().navigate(R.id.createInviteDialogFragment)
+
                         }
                         "Reset Scores and History" -> {
                             // Show confirmation dialog
@@ -95,7 +113,8 @@ class SettingsFragment : Fragment() {
                                 .show()
                         }
                         "Accept Invite" -> {
-                            AcceptInviteDialogFragment().show(childFragmentManager, AcceptInviteDialogFragment.TAG)
+
+                            findNavController().navigate(R.id.acceptInviteDialogFragment)
                         }
                     }
                 }

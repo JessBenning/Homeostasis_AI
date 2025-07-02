@@ -76,6 +76,11 @@
 
     <!-- Groups -->
     <string name="title_default_group">Unknown Group</string>
+    <string name="onboarding_dialog_title">Welcome!</string>
+    <string name="onboarding_dialog_message">To continue, please join an existing group or create a new one.</string>
+    <string name="onboarding_action_accept_invite">Accept Invite</string>
+    <string name="onboarding_action_create_group">Create Group</string>
+    <string name="action_logout">Logout</string>
 
     <!-- Settings -->
     <string name="settings_title">Settings</string>
@@ -92,6 +97,12 @@
     <string name="settings_group_create_new">Create Group</string>
     <string name="settings_group_name">Group Name</string>
     <string name="settings_group_create_button">Create</string>
+    <string name="settings_accept_invite_title">Accept Invite</string>
+    <string name="settings_accept_invite_hint">Paste invite link here</string>
+    <string name="settings_accept_invite_dismiss_button">Cancel</string>
+    <string name="settings_accept_invite_button">Accept</string>
+    <string name="error_accept_invite_failed">Accepting the invite failed</string>
+    <string name="error_invite_link_empty">Ensure the link is pasted</string>
     <string name="title_tasks">Tasks</string>
     
     <!-- Auth -->
@@ -104,4 +115,5 @@
     <string name="auth_create_account">Create Account</string>
     <string name="auth_already_have_account">Already have an account? Login</string>
     <string name="auth_dont_have_account">Don\'t have an account? Register</string>
+
 </resources>

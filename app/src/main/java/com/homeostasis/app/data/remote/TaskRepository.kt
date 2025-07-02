@@ -7,7 +7,7 @@ import com.google.firebase.firestore.CollectionReference
 import com.google.firebase.firestore.FieldValue // NEW: For server-side timestamps
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.SetOptions
-// import com.homeostasis.app.data.TaskDao // REMOVED: TaskRepository will focus on Firestore
+// import com.homeostasis.app.data.local.TaskDao // REMOVED: TaskRepository will focus on Firestore
 import com.homeostasis.app.data.model.Task
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -139,7 +139,7 @@ class TaskRepository(/* private val taskDao: TaskDao */) : FirebaseRepository<Ta
     suspend fun createOrUpdateTaskInFirestore(task: Task): Boolean { // RENAMED and MODIFIED from your 'createOrUpdateTask'
         return try {
             // Data to be sent to Firestore, EXCLUDING local-only flags
-            val firestoreTaskData = mapOf(
+            val firestoreTaskData = mapOf( //TODO move to task model
 //                "id" to task.id,
                 "title" to task.title,
                 "description" to task.description, // Keep even if null to clear field
@@ -147,7 +147,7 @@ class TaskRepository(/* private val taskDao: TaskDao */) : FirebaseRepository<Ta
                 "categoryId" to task.categoryId,
                 "ownerId" to task.ownerId, // Use ownerId instead of createdBy
                 "createdAt" to task.createdAt, // Preserve original creation time
-                "lastModifiedAt" to FieldValue.serverTimestamp(), // Use server timestamp for modification
+                "lastModifiedAt" to task.lastModifiedAt, // Use server timestamp for modification
                 "isCompleted" to task.isCompleted, // Persist completion status
                 "isDeleted" to task.isDeleted,// Persist soft-delete status (usually false for create/update)
                 "householdGroupId" to task.householdGroupId

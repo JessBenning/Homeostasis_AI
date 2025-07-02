@@ -5,7 +5,12 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.io.IOException
+import kotlin.concurrent.read
+import kotlin.io.path.exists
+import java.io.FileInputStream
+import java.security.MessageDigest
 
 /**
  * Utility class for image processing operations.
@@ -84,5 +89,26 @@ object ImageUtils {
     }
 
     // TODO: Add function for circular cropping if needed for display
+
+
+
+    fun File.generateMD5(): String? {
+        if (!this.exists() || !this.isFile) return null
+        return try {
+            FileInputStream(this).use { fis ->
+                val buffer = ByteArray(8192) // Read in 8KB chunks
+                val digest = MessageDigest.getInstance("MD5")
+                var bytesRead: Int
+                while (fis.read(buffer).also { bytesRead = it } != -1) {
+                    digest.update(buffer, 0, bytesRead)
+                }
+                // Convert byte array to hex string
+                digest.digest().joinToString("") { "%02x".format(it) }
+            }
+        } catch (e: Exception) {
+            //Log.e("FileUtils", "Error generating MD5 for $path", e)
+            null // Return null if hashing fails
+        }
+    }
 
 }

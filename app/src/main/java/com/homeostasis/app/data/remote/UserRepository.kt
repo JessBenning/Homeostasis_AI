@@ -1,50 +1,71 @@
 package com.homeostasis.app.data.remote
 
+import android.net.Uri // Still needed for userProfileChangeRequest photoUri
 import android.util.Log
-import com.homeostasis.app.data.Constants
+
+// Removed MimeTypeMap as uploadImageToStorage is removed
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
-import com.google.firebase.auth.UserProfileChangeRequest
-import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.Timestamp // Import Timestamp
-import com.homeostasis.app.data.model.User
-import com.homeostasis.app.data.UserDao // Import UserDao
+import com.google.firebase.auth.userProfileChangeRequest
+import com.google.firebase.firestore.auth.User
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.first // Import first
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.distinctUntilChanged
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.io.path.exists
 
 /**
- * Repository for user-related operations.
+ * Repository for Firebase Authentication operations and updating FirebaseUser's profile (displayName, photoUrl).
+ *
+ * It does NOT directly interact with UserDao or the local database.
+ * It does NOT directly handle file uploads to Firebase Storage; that is delegated
+ * to FirebaseSyncManager (which would use FirebaseStorageRepository).
+ *
+ * Local user data management is handled by ViewModels or other services that interact with UserDao.
+ * Firestore 'user' collection interaction is handled by FirebaseSyncManager or similar.
  */
+@Singleton
 class UserRepository @Inject constructor(
-    private val firebaseStorageRepository: FirebaseStorageRepository, // Inject FirebaseStorageRepository
-    private val userDao: UserDao // Inject UserDao
-) : FirebaseRepository<User>() {
+    // Removed FirebaseStorageRepository as uploadImageToStorage is gone.
+    // FirebaseSyncManager will use FirebaseStorageRepository directly.
+    private val auth: FirebaseAuth
+) {
 
-    override val collectionName: String = User.COLLECTION
-
-    private val auth: FirebaseAuth by lazy {
-        FirebaseAuth.getInstance()
+    companion object {
+        private const val TAG = "UserRepository"
     }
 
-    // Add this method
+    /**
+     * Observes the Firebase Authentication state and emits the UID of the current user.
+     * Emits null if no user is authenticated.
+     */
+    fun observeFirebaseAuthUid(): Flow<String?> = callbackFlow {
+        Log.d(TAG, "observeFirebaseAuthUid: Setting up AuthStateListener.")
+        val listener = FirebaseAuth.AuthStateListener { firebaseAuth ->
+            val user = firebaseAuth.currentUser
+            Log.d(TAG, "observeFirebaseAuthUid: AuthStateChanged. User: ${user?.uid}")
+            trySend(user?.uid)
+        }
+        auth.addAuthStateListener(listener)
+
+        awaitClose {
+            Log.d(TAG, "observeFirebaseAuthUid: Closing AuthStateListener.")
+            auth.removeAuthStateListener(listener)
+        }
+    }.distinctUntilChanged()
+
     /**
      * Gets the current FirebaseUser from FirebaseAuth.
-     *
-     * @return The current FirebaseUser if logged in, otherwise null.
      */
     fun getCurrentUser(): FirebaseUser? {
         return auth.currentUser
     }
 
-    // Add this method as well if you need to quickly get the user ID
     /**
      * Gets the current FirebaseUser's ID.
-     *
-     * @return The current FirebaseUser's ID if logged in, otherwise null.
      */
     fun getCurrentUserId(): String? {
         return auth.currentUser?.uid
@@ -52,297 +73,122 @@ class UserRepository @Inject constructor(
 
 
     /**
-     * Register a new user with email and password.
+     * Registers a new user with email, password, and name in Firebase Authentication.
+     * It ONLY handles the Firebase Auth user creation and Auth profile update (displayName).
+     * The creation of a corresponding local user record in Room (via UserDao)
+     * is the responsibility of the calling ViewModel or service.
+     *
+     * @param email User's email.
+     * @param password User's password.
+     * @param name User's display name for the Firebase Auth profile.
+     * @return Result<FirebaseUser> containing the FirebaseUser on success, or an exception on failure.
      */
-    // In UserRepository.kt
-    suspend fun registerUser(email: String, password: String, name: String): Result<FirebaseUser> {
+    suspend fun registerUserInFirebaseAuth(email: String, password: String, name: String): Result<FirebaseUser> {
         return try {
-            Log.d("UserRepository", "Attempting to register user with Firebase: $email")
+            Log.d(TAG, "Attempting to register user with Firebase Auth: $email")
             val authResult = auth.createUserWithEmailAndPassword(email, password).await()
             val firebaseUser = authResult.user
-            Log.d("UserRepository", "Firebase user created successfully. UID: ${firebaseUser?.uid}")
+            Log.d(TAG, "Firebase Auth user created successfully. UID: ${firebaseUser?.uid}")
 
             if (firebaseUser == null) {
-                Log.e("UserRepository", "Firebase user is null after creation, cannot proceed to local DB save.")
+                Log.e(TAG, "Firebase user is null after auth creation.")
                 return Result.failure(Exception("Firebase user creation resulted in null user object"))
             }
 
-            val now = Timestamp.now()
-            // ... (profile update logic) ...
-
-            val userToInsert = User(
-                id = firebaseUser.uid, // Make sure firebaseUser.uid is not null here
-                name = name,
-                // email = firebaseUser.email,
-                profileImageUrl = "",
-                createdAt = now,
-                lastActive = now,
-                lastResetScore = 0,
-                resetCount = 0,
-                householdGroupId = com.homeostasis.app.data.Constants.DEFAULT_GROUP_ID,
-                needsSync = true,
-                isDeletedLocally = false,
-                lastModifiedAt = now
-            )
-            Log.d("UserRepository", "User object created for local DB: $userToInsert")
-
-            Log.d("UserRepository", "User object created for local DB: $userToInsert")
-            try {
-                userDao.upsertUser(userToInsert)
-                Log.d("UserRepository", "SUCCESS: userDao.upsertUser completed for UID: ${userToInsert.id}.")
-            } catch (e: Exception) {
-                Log.e("UserRepository", "EXCEPTION during userDao.upsertUser for UID ${userToInsert.id}: ${e.message}", e)
-                // Log the full stack trace for more details by passing 'e' as the third argument
+            val profileUpdates = userProfileChangeRequest {
+                displayName = name
             }
+            firebaseUser.updateProfile(profileUpdates).await()
+            Log.d(TAG, "Firebase Auth profile displayName updated for user: ${firebaseUser.uid}")
 
-
-            Log.d("UserRepository", "upsertUser called for UID: ${userToInsert.id}. Check local DB now.")
-
-            Result.success(firebaseUser) // No need for !! if you checked above
+            Result.success(firebaseUser)
         } catch (e: Exception) {
-            Log.e("UserRepository", "Error during user registration: ${e.message}", e)
+            Log.e(TAG, "Error during Firebase Auth user registration for email $email: ${e.message}", e)
             Result.failure(e)
         }
     }
 
     /**
-     * Sign in with email and password.
+     * Signs in a user with email and password using Firebase Authentication.
      */
-    suspend fun signIn(email: String, password: String): Result<FirebaseUser> {
+    suspend fun signInWithFirebaseAuth(email: String, password: String): Result<FirebaseUser> {
         return try {
+            Log.d(TAG, "Attempting to sign in user with email via Firebase Auth: $email")
             val authResult = auth.signInWithEmailAndPassword(email, password).await()
-            // After successful sign-in, the FirebaseSyncManager should handle fetching the user data from Firestore
-            // and saving it to the local DB. No direct Firestore fetch here.
-            Result.success(authResult.user!!)
+            val firebaseUser = authResult.user
+            if (firebaseUser != null) {
+                Log.d(TAG, "User ${firebaseUser.uid} signed in successfully via Firebase Auth.")
+                Result.success(firebaseUser)
+            } else {
+                Log.e(TAG, "Sign in with Firebase Auth successful but FirebaseUser is null for email: $email")
+                Result.failure(Exception("Sign in completed but FirebaseUser object was null."))
+            }
         } catch (e: Exception) {
+            Log.e(TAG, "Error during Firebase Auth sign in for email $email: ${e.message}", e)
             Result.failure(e)
         }
     }
 
     /**
-     * Sign out the current user.
+     * Signs out the current user from Firebase Authentication.
      */
-    fun signOut() {
+    fun signOutFromFirebaseAuth() {
+        val currentUserId = auth.currentUser?.uid
+        Log.d(TAG, "Signing out current user from Firebase Auth: $currentUserId")
         auth.signOut()
-        // Optionally, clear local user-specific data or caches here
+        Log.d(TAG, "Sign out from Firebase Auth complete.")
     }
 
     /**
-     * Send password reset email.
+     * Sends a password reset email using Firebase Authentication.
      */
-    suspend fun sendPasswordResetEmail(email: String): Result<Unit> {
+    suspend fun sendPasswordResetEmailWithFirebaseAuth(email: String): Result<Unit> {
         return try {
+            Log.d(TAG, "Sending password reset email via Firebase Auth to: $email")
             auth.sendPasswordResetEmail(email).await()
+            Log.d(TAG, "Password reset email sent successfully via Firebase Auth to: $email")
             Result.success(Unit)
         } catch (e: Exception) {
+            Log.e(TAG, "Error sending password reset email via Firebase Auth to $email: ${e.message}", e)
             Result.failure(e)
         }
     }
 
     /**
-     * Update user profile in local DB and mark for sync.
-     * The `updates` map should contain fields that are part of the User model.
+     * Updates the current Firebase Authenticated user's profile (displayName and/or photoUrl).
+     * This method interacts directly with Firebase Authentication.
+     * The photoUrl provided here should be a remote URL (e.g., from Firebase Storage,
+     * obtained by FirebaseSyncManager after an upload).
+     *
+     * @param displayName The new display name (optional).
+     * @param photoUrl The new photo URL (optional, should be a remote URL).
+     * @return Result<Unit> indicating success or failure.
      */
-    suspend fun updateUserProfile(userId: String, updates: Map<String, Any>): Result<Unit> {
-        return try {
-            // Get the current user's householdGroupId from the local DB
-            val currentHouseholdGroupId = userDao.getUserByIdWithoutHouseholdIdFlow(userId).first()?.householdGroupId?.takeIf { it.isNotEmpty() } ?: com.homeostasis.app.data.Constants.DEFAULT_GROUP_ID
-
-            val currentUser = userDao.getUserById(userId, currentHouseholdGroupId) // Fetch local user
-            if (currentUser != null) {
-                // Apply updates to the local user object
-                val updatedUser = currentUser.copy(
-                    name = updates["name"] as? String ?: currentUser.name,
-                    profileImageUrl = updates["profileImageUrl"] as? String ?: currentUser.profileImageUrl,
-                    // Add other fields from the map as needed
-                    lastModifiedAt = Timestamp.now(), // Update modification timestamp
-                    needsSync = true // Mark for sync
-                )
-                userDao.upsertUser(updatedUser) // Save updated user to local DB
-                Result.success(Unit)
-            } else {
-                Result.failure(Exception("User not found locally for update"))
-            }
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
-    /**
-     * Get user by ID. Attempts to fetch from local DAO first, then Firestore.
-     * This is the corrected version.
-     */
-    suspend fun getUser(userId: String): User? {
-        // Get the current user's householdGroupId from the local DB
-        val currentHouseholdGroupId = userDao.getUserByIdWithoutHouseholdIdFlow(userId).first()?.householdGroupId?.takeIf { it.isNotEmpty() } ?: com.homeostasis.app.data.Constants.DEFAULT_GROUP_ID
-
-        // Try local DAO first, passing the householdGroupId
-        var user = userDao.getUserById(userId, currentHouseholdGroupId) // Corrected call
-
-        if (user == null || user.needsSync) { // Also fetch if marked as needsSync
-            // Not found locally or needs sync, try fetching from Firestore
-            // getUserFromFirestore internally handles ensuring the returned User object has a householdGroupId
-            val firestoreResult = getUserFromFirestore(userId)
-            if (firestoreResult.isSuccess) {
-                val userFromFirestore = firestoreResult.getOrNull()
-                userFromFirestore?.let {
-                    // Ensure the user object being cached has a householdGroupId,
-                    // preferring its own, then the one from the local DB, then default.
-                    val resolvedHouseholdGroupIdForCache = it.householdGroupId ?: currentHouseholdGroupId
-                    val userToCache = it.copy(
-                        householdGroupId = resolvedHouseholdGroupIdForCache,
-                        needsSync = false // Mark as synced
-                    )
-                    userDao.upsertUser(userToCache) // upsertUser in DAO should handle the full User object
-                    user = userToCache // Update user with the fresh data
-                }
-            }
-        }
-        // Final safety net for householdGroupId, though ideally it's always populated by now.
-        // If the user was fetched from DAO, it should already have the correct currentHouseholdGroupId.
-        // If fetched from Firestore, getUserFromFirestore populates it.
-        // This makes sure the returned object is consistent.
-        return user?.copy(
-            householdGroupId = user.householdGroupId ?: currentHouseholdGroupId // Prefer user's existing, then current, then default (already handled by currentHouseholdGroupId init)
-        )
-    }
-    // Add this method to your UserRepository.kt
-    suspend fun updateUserProfileInLocalDb(userId: String, name: String, profileImageUrl: String): Boolean {
-        // Get the current user's householdGroupId from the local DB
-        val currentHouseholdGroupId = userDao.getUserByIdWithoutHouseholdIdFlow(userId).first()?.householdGroupId?.takeIf { it.isNotEmpty() } ?: com.homeostasis.app.data.Constants.DEFAULT_GROUP_ID
-
-        val existingUser = userDao.getUserById(userId, currentHouseholdGroupId)
-
-        return if (existingUser != null) {
-            val updatedUser = existingUser.copy(
-                name = name,
-                profileImageUrl = profileImageUrl,
-                needsSync = true, // Mark for sync as local data changed
-                lastModifiedAt = com.google.firebase.Timestamp.now() // Update modification timestamp
-            )
-            userDao.upsertUser(updatedUser) // Call the DAO to save the updated user
-            true
-        } else {
-            // Log an error or handle the case where the user isn't found locally
-            // For example: Log.e("UserRepository", "User $userId not found in group $currentHouseholdGroupId for local profile update.")
-            false
-        }
-    }
-
-    /**
-     * Get user by ID specifically from Firestore.
-     */
-    suspend fun getUserFromFirestore(userId: String): Result<User> {
-        return try {
-            val userDocument = collection.document(userId).get().await().toObject(User::class.java)
-            if (userDocument != null) {
-                // Get the current user's householdGroupId from the local DB as a fallback
-                val currentHouseholdGroupId = userDao.getUserByIdWithoutHouseholdIdFlow(userId).first()?.householdGroupId?.takeIf { it.isNotEmpty() } ?: com.homeostasis.app.data.Constants.DEFAULT_GROUP_ID
-
-                // Ensure householdGroupId is populated if it comes as null from Firestore, using local DB as fallback
-                val finalHouseholdGroupId = userDocument.householdGroupId ?: currentHouseholdGroupId
-                Result.success(userDocument.copy(householdGroupId = finalHouseholdGroupId))
-            } else {
-                Result.failure(Exception("User not found in Firestore"))
-            }
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
-
-    /**
-     * Get all users from Firestore.
-     */
-    suspend fun getAllUsersFromFirestore(): Result<List<User>> {
-        return try {
-            // Get the current user's ID to fetch their householdGroupId from the local DB
-            val currentUserId = getCurrentUserId()
-            val currentHouseholdGroupId = if (currentUserId != null) {
-                userDao.getUserByIdWithoutHouseholdIdFlow(currentUserId).first()?.householdGroupId?.takeIf { it.isNotEmpty() } ?: com.homeostasis.app.data.Constants.DEFAULT_GROUP_ID
-            } else {
-                com.homeostasis.app.data.Constants.DEFAULT_GROUP_ID
-            }
-
-            val users = collection.get().await().toObjects(User::class.java).map { user ->
-                user.copy(
-                    // Use the user's existing householdGroupId from Firestore, or the current user's group as a fallback
-                    householdGroupId = user.householdGroupId ?: currentHouseholdGroupId
-                )
-            }
-            Result.success(users)
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
-    /**
-     * Get all users as a Flow from Firestore.
-     */
-    fun getAllUsersFromFirestoreAsFlow(): Flow<Result<List<User>>> = flow {
-        try {
-            // Get the current user's ID to fetch their householdGroupId from the local DB
-            val currentUserId = getCurrentUserId()
-            val currentHouseholdGroupId = if (currentUserId != null) {
-                userDao.getUserByIdWithoutHouseholdIdFlow(currentUserId).first()?.householdGroupId?.takeIf { it.isNotEmpty() } ?: com.homeostasis.app.data.Constants.DEFAULT_GROUP_ID
-            } else {
-                com.homeostasis.app.data.Constants.DEFAULT_GROUP_ID
-            }
-
-            val snapshot = collection.get().await()
-            val users = snapshot.toObjects(User::class.java).map { user ->
-                user.copy(
-                    // Use the user's existing householdGroupId from Firestore, or the current user's group as a fallback
-                    householdGroupId = user.householdGroupId ?: currentHouseholdGroupId
-                )
-            }
-            emit(Result.success(users))
-        } catch (e: Exception) {
-            emit(Result.failure(e))
-        }
-    }
-
-    /**
-     * Pushes a locally modified user to Firestore.
-     * This is called by the sync manager.
-     */
-    suspend fun pushUserToFirestore(user: User): Boolean {
-        return try {
-            // Get the current user's ID to fetch their householdGroupId from the local DB as a fallback
-            val currentUserId = getCurrentUserId()
-            val currentHouseholdGroupId = if (currentUserId != null) {
-                userDao.getUserByIdWithoutHouseholdIdFlow(currentUserId).first()?.householdGroupId?.takeIf { it.isNotEmpty() } ?: com.homeostasis.app.data.Constants.DEFAULT_GROUP_ID
-            } else {
-                com.homeostasis.app.data.Constants.DEFAULT_GROUP_ID
-            }
-
-            // Ensure the user object has a householdGroupId and lastModifiedAt before pushing
-            val userToPush = user.copy(
-                // Use the user's existing householdGroupId, or the current user's group as a fallback
-                householdGroupId = user.householdGroupId ?: currentHouseholdGroupId,
-                lastModifiedAt = Timestamp.now(), // Always update lastModifiedAt on push
-                needsSync = false // This flag is for local state, don't push it
-            )
-            set(userToPush.id, userToPush)
-            true
-        } catch (e: Exception) {
-            // Log.e("UserRepository", "Error pushing user ${user.id} to Firestore", e)
-            false
-        }
-    }
-
-
-
-    /**
-     * Uploads a profile picture to Firebase Storage.
-     */
-    suspend fun uploadProfilePicture(userId: String, localFile: java.io.File): String? {
-        return firebaseStorageRepository.uploadFile(
-            file = localFile,
-            path = "profile_pictures/$userId", // Storage path
-            fileName = "profile.jpg" // Fixed filename for the profile picture
-        )
-    }
-
-    override fun getModelClass(): Class<User> = User::class.java
+//    suspend fun updateFirebaseAuthProfile(displayName: String?, photoUrl: String?): Result<Unit> {
+//        val firebaseUser = auth.currentUser
+//        if (firebaseUser == null) {
+//            Log.w(TAG, "updateFirebaseAuthProfile: No Firebase user logged in.")
+//            return Result.failure(Exception("No user logged in to update Firebase Auth profile."))
+//        }
+//        return try {
+//            val requestBuilder = userProfileChangeRequest {
+//                displayName?.let { this.displayName = it }
+//                photoUrl?.let { this.photoUri = Uri.parse(it) }
+//            }
+//
+//            // Only proceed if there are actual changes to make
+//            if (requestBuilder.displayName != null || requestBuilder.photoUri != null ||
+//                (displayName != null && displayName != firebaseUser.displayName) ||
+//                (photoUrl != null && photoUrl != firebaseUser.photoUrl?.toString())) { // Check against current values
+//                firebaseUser.updateProfile(requestBuilder).await()
+//                Log.d(TAG, "Successfully updated Firebase Auth profile for user ${firebaseUser.uid}.")
+//            } else {
+//                Log.d(TAG, "updateFirebaseAuthProfile: No changes to apply to Firebase Auth profile for user ${firebaseUser.uid}.")
+//            }
+//            Result.success(Unit)
+//        } catch (e: Exception) {
+//            Log.e(TAG, "Error updating Firebase Auth profile for user ${firebaseUser.uid}: ${e.message}", e)
+//            Result.failure(e)
+//        }
+//    }
 }

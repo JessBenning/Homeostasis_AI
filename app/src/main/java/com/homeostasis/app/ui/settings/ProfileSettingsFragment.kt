@@ -15,6 +15,7 @@ import com.bumptech.glide.request.RequestOptions
 import com.bumptech.glide.signature.ObjectKey
 import com.google.android.material.snackbar.Snackbar
 import com.homeostasis.app.R
+import com.homeostasis.app.data.Constants
 import com.homeostasis.app.databinding.FragmentProfileSettingsBinding
 import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -35,9 +36,9 @@ class ProfileSettingsFragment : Fragment() {
     lateinit var appContext: Context // Inject ApplicationContext
 
     private val selectImageLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
-        uri?.let {
+        uri?.let { selectedImageUri ->
             // Pass the selected image URI to the ViewModel for processing
-            viewModel.handleImageSelection(requireContext(), it)
+            viewModel.handleImageSelection(selectedImageUri)
         }
     }
 
@@ -57,29 +58,30 @@ class ProfileSettingsFragment : Fragment() {
             user?.let { currentUser -> // Renamed to 'user' for clarity
                 binding.editTextName.setText(currentUser.name)
 
-                // Derive the local profile picture file path
-                val localFilePath = File(
-                    appContext.filesDir,
-                    "profile_picture_${currentUser.id}.jpg"
-                ).absolutePath
-                val localFile = File(localFilePath)
-                val imageSignature = localFile.lastModified().toString()
+                // Use the helper function to get the local File object
+                val localFile = Constants.getProfileImageFile(appContext, currentUser.id)
 
-                if (localFile.exists()) {
+                if (localFile != null && localFile.exists()) {
+                    // Determine signature *only if* the file exists
+                    val imageSignature = localFile.lastModified().toString()
+
                     // Load from local file if it exists
                     Glide.with(this)
-                        .load(localFile)
+                        .load(localFile) // Glide can load a File object directly
                         .signature(ObjectKey(imageSignature))
                         .apply(RequestOptions.circleCropTransform())
-                        .placeholder(R.drawable.ic_default_profile) // Use a default image
+                        .placeholder(R.drawable.ic_default_profile)
+                        .error(R.drawable.ic_profile_load_error) // Good practice to have an error placeholder
                         .into(binding.imageViewProfilePicture)
 
-                } else if (currentUser.profileImageUrl.isNotEmpty()) {
-                    // Load from remote URL if local file doesn't exist and remote URL is available
+                } else if (!currentUser.profileImageUrl.isNullOrEmpty()) { // Use isNullOrEmpty for safety
+                    // Load from remote URL if local file doesn't exist (or path couldn't be formed)
+                    // and remote URL is available
                     Glide.with(this)
                         .load(currentUser.profileImageUrl)
                         .apply(RequestOptions.circleCropTransform())
-                        .placeholder(R.drawable.ic_default_profile) // Use a default image
+                        .placeholder(R.drawable.ic_default_profile)
+                        .error(R.drawable.ic_profile_load_error)
                         .into(binding.imageViewProfilePicture)
                 } else {
                     // Load default image if no local file and no remote URL

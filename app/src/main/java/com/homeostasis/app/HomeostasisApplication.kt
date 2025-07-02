@@ -7,7 +7,7 @@ import com.google.firebase.FirebaseApp
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreSettings
 import com.homeostasis.app.data.AppDatabase
-import com.homeostasis.app.data.FirebaseSyncManager
+import com.homeostasis.app.data.sync.FirebaseSyncManager
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 
@@ -65,11 +65,7 @@ class HomeostasisApplication : Application() {
             // TODO: Initialize WorkManager for background tasks
             Log.d(TAG, "AppDatabase initialized successfully")
 
-//            val syncManager = FirebaseSyncManager(appDatabase, firestore, taskRepository, this)
-//            syncManager.syncTasks()
-//            syncManager.syncHouseholdGroups()
-//            syncManager.syncInvitations()
-//            syncManager.syncUsers()
+
 
         } catch (e: Exception) {
             Log.e(TAG, "Error initializing Firebase: ${e.message}", e)

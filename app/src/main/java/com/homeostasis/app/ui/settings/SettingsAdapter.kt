@@ -6,6 +6,7 @@ import android.view.ViewGroup
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.homeostasis.app.R
+import com.homeostasis.app.ui.groups.InviteDialogFragment
 
 class SettingsAdapter(private val settingsListItems: List<SettingsListItem>, private val onItemClick: (String) -> Unit) :
     RecyclerView.Adapter<SettingsAdapter.SettingsViewHolder>() {

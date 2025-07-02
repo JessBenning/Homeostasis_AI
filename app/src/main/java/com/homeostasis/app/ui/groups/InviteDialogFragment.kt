@@ -1,22 +1,22 @@
-package com.homeostasis.app.ui.settings
+package com.homeostasis.app.ui.groups
 
 import android.app.Dialog
-import android.os.Bundle
-import androidx.fragment.app.DialogFragment
-import com.homeostasis.app.R
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.launch
-import android.widget.Toast
-import androidx.fragment.app.viewModels
 import android.content.Intent
-import android.widget.TextView
-import android.widget.Button
 import android.net.Uri
+import android.os.Bundle
 import android.util.Log
+import android.widget.Button
+import android.widget.TextView
+import android.widget.Toast
+import androidx.fragment.app.DialogFragment
+import androidx.fragment.app.viewModels
+import androidx.lifecycle.lifecycleScope
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.homeostasis.app.R
+import com.homeostasis.app.data.Constants
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.collectLatest
-
+import kotlinx.coroutines.launch
 
 @AndroidEntryPoint
 class InviteDialogFragment : DialogFragment() {
@@ -41,7 +41,7 @@ class InviteDialogFragment : DialogFragment() {
         lifecycleScope.launch {
             inviteViewModel.householdGroupId.collectLatest { householdGroupId ->
                 Log.d("InviteDialogFragment", "Observed householdGroupId: $householdGroupId")
-                if (householdGroupId != null && householdGroupId.isNotEmpty() && householdGroupId != com.homeostasis.app.data.Constants.DEFAULT_GROUP_ID) {
+                if (householdGroupId != null && householdGroupId.isNotEmpty() && householdGroupId != Constants.DEFAULT_GROUP_ID) {
                     // Generate deep link with the actual group ID
                     val encodedGroupId = Uri.encode(householdGroupId)
                     val deepLink = "homeostasis://invite?groupId=$encodedGroupId"

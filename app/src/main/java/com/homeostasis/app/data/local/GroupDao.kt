@@ -1,4 +1,4 @@
-package com.homeostasis.app.data
+package com.homeostasis.app.data.local
 
 import androidx.room.Dao
 import androidx.room.Delete
@@ -25,18 +25,18 @@ interface GroupDao {
     @Upsert
     suspend fun upsert(group: Group)
 
-    @Query("SELECT * FROM groups WHERE id = :groupId")
+    @Query("SELECT * FROM `groups` WHERE id = :groupId")
     fun getGroupById(groupId: String): Flow<Group?>
 
-    @Query("SELECT * FROM groups")
+    @Query("SELECT * FROM `groups`")
     fun getAllGroups(): Flow<List<Group>>
 
-    @Query("SELECT * FROM groups WHERE needsSync = 1")
+    @Query("SELECT * FROM `groups` WHERE needsSync = 1")
     fun getGroupsRequiringSync(): Flow<List<Group>>
 
-    @Query("DELETE FROM groups WHERE id = :groupId")
+    @Query("DELETE FROM `groups` WHERE id = :groupId")
     suspend fun deleteGroupById(groupId: String)
 
-    @Query("DELETE FROM groups")
+    @Query("DELETE FROM `groups`")
     suspend fun deleteAllGroups()
 }

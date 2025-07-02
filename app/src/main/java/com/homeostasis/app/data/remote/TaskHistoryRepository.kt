@@ -1,24 +1,23 @@
 package com.homeostasis.app.data.remote
 
-import com.homeostasis.app.data.Constants
 import android.util.Log
 import com.google.firebase.Timestamp
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.Query
 import com.homeostasis.app.data.model.TaskHistory
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.tasks.await
-import kotlinx.coroutines.flow.first // Import first
 import java.util.Date
-import com.homeostasis.app.data.AppDatabase
+import com.homeostasis.app.data.local.TaskHistoryDao
 import javax.inject.Inject
 
 /**
  * Repository for task history-related operations.
  */
 class TaskHistoryRepository @Inject constructor(
-    private val taskHistoryDao: com.homeostasis.app.data.TaskHistoryDao, // Inject TaskHistoryDao
+    private val taskHistoryDao: TaskHistoryDao, // Inject TaskHistoryDao
 ) : FirebaseRepository<TaskHistory>() {
     
     override val collectionName: String = TaskHistory.COLLECTION
@@ -103,7 +102,31 @@ class TaskHistoryRepository @Inject constructor(
 //    suspend fun clearTaskHistory() {
 //        taskHistoryDao.clearTable()
 //    }
-    
+    // In TaskHistoryRepository.kt
+
+    suspend fun softDeleteTaskHistoryInFirestore(taskHistoryId: String): Boolean {
+        return try {
+            val updates = mapOf(//TODO move to taskHistory model
+                "isDeleted" to true,
+                "lastModifiedAt" to FieldValue.serverTimestamp()
+            )
+            firestore.collection(collectionName).document(taskHistoryId).update(updates).await()
+            true
+        } catch (e: Exception) {
+            Log.e("TaskHistoryRepo", "Error soft-deleting task history $taskHistoryId in Firestore", e)
+            false
+        }
+    }
+
+    suspend fun hardDeleteTaskHistoryFromFirestore(taskHistoryId: String): Boolean {
+        return try {
+            firestore.collection(collectionName).document(taskHistoryId).delete().await()
+            true
+        } catch (e: Exception) {
+            Log.e("TaskHistoryRepo", "Error hard-deleting task history $taskHistoryId from Firestore", e)
+            false
+        }
+    }
     /**
      * Get task history for a specific task as a Flow.
      */
